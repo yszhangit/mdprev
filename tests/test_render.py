@@ -1,4 +1,6 @@
+from html import unescape
 from pathlib import Path
+import re
 
 import pytest
 
@@ -15,7 +17,63 @@ def test_gfm_features_and_complete_document(tmp_path: Path):
     assert 'type="checkbox"' in html and "checked" in html
     assert "<del>gone</del>" in html
     assert "<table>" in html and "<td>1</td>" in html
-    assert "<pre><code" in html and "print(1)" in html
+    assert '<pre><code class="highlight language-python">' in html
+    assert _code_text(html) == "print(1)\n"
+
+
+def _code_text(html: str) -> str:
+    block = re.search(r"<pre><code[^>]*>(.*?)</code></pre>", html, re.DOTALL)
+    assert block is not None
+    return unescape(re.sub(r"<[^>]+>", "", block.group(1)))
+
+
+def test_every_supported_language_is_highlighted():
+    source = (Path(__file__).parent / "fixtures" / "highlighting.md").read_text()
+    html = render_markdown(source)
+    supported = {
+        "bash", "python", "javascript", "typescript", "json", "yaml", "html",
+        "css", "c", "cpp", "rust", "go", "sql", "markdown", "diff",
+    }
+    for language in supported:
+        assert f'class="highlight language-{language}"' in html
+
+
+@pytest.mark.parametrize(
+    ("alias", "language"),
+    [
+        ("sh", "bash"), ("shell", "bash"), ("py", "python"),
+        ("js", "javascript"), ("ts", "typescript"), ("yml", "yaml"),
+        ("htm", "html"), ("c++", "cpp"), ("rs", "rust"),
+        ("golang", "go"), ("md", "markdown"), ("patch", "diff"),
+    ],
+)
+def test_language_aliases_use_controlled_lexer(alias: str, language: str):
+    html = render_markdown(f"```{alias}\nvalue = 1\n```")
+    assert f'class="highlight language-{language}"' in html
+
+
+@pytest.mark.parametrize("tag", ["", "unknown", "python;touch-pwned", "python<script>"])
+def test_missing_unknown_and_malicious_languages_stay_plain(tag: str):
+    html = render_markdown(f"```{tag}\n<& dangerous\n```")
+    assert 'class="highlight' not in html
+    assert "&lt;&amp; dangerous" in html
+    assert "<script>" not in html
+
+
+def test_highlighting_preserves_code_and_cannot_inject_markup():
+    code = '<script>alert("x")</script> & café\n'
+    html = render_markdown(f"```python\n{code}```")
+    assert _code_text(html) == code
+    assert "<script>" not in html
+    assert "enable_javascript" not in html
+
+
+def test_highlight_palettes_cover_light_and_dark_appearances():
+    html = render_markdown("```python\nprint(1)\n```")
+    assert "code.highlight .k" in html
+    assert "@media (prefers-color-scheme: dark)" in html
+    # Both Pygments palettes emit a rule for keyword tokens.
+    assert html.count("code.highlight .k") >= 2
 
 
 def test_untrusted_markup_and_resources_are_filtered(tmp_path: Path):

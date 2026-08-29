@@ -15,6 +15,26 @@ import subprocess
 import unicodedata
 from urllib.parse import unquote, urlparse
 
+from pygments import highlight
+from pygments.formatters import HtmlFormatter
+from pygments.lexers import (
+    BashLexer,
+    CLexer,
+    CppLexer,
+    CssLexer,
+    DiffLexer,
+    GoLexer,
+    HtmlLexer,
+    JavascriptLexer,
+    JsonLexer,
+    MarkdownLexer,
+    PythonLexer,
+    RustLexer,
+    SqlLexer,
+    TypeScriptLexer,
+    YamlLexer,
+)
+
 
 class RenderError(RuntimeError):
     """An expected error while reading or rendering a document."""
@@ -28,6 +48,45 @@ _TAGS = {
     "strong", "table", "tbody", "td", "th", "thead", "tr", "ul",
 }
 _VOID = {"br", "hr", "img", "input"}
+_LEXERS = {
+    "bash": BashLexer,
+    "python": PythonLexer,
+    "javascript": JavascriptLexer,
+    "typescript": TypeScriptLexer,
+    "json": JsonLexer,
+    "yaml": YamlLexer,
+    "html": HtmlLexer,
+    "css": CssLexer,
+    "c": CLexer,
+    "cpp": CppLexer,
+    "rust": RustLexer,
+    "go": GoLexer,
+    "sql": SqlLexer,
+    "markdown": MarkdownLexer,
+    "diff": DiffLexer,
+}
+_LANGUAGE_ALIASES = {
+    "bash": "bash", "sh": "bash", "shell": "bash",
+    "python": "python", "py": "python",
+    "javascript": "javascript", "js": "javascript",
+    "typescript": "typescript", "ts": "typescript",
+    "json": "json",
+    "yaml": "yaml", "yml": "yaml",
+    "html": "html", "htm": "html",
+    "css": "css",
+    "c": "c",
+    "cpp": "cpp", "c++": "cpp",
+    "rust": "rust", "rs": "rust",
+    "go": "go", "golang": "go",
+    "sql": "sql",
+    "markdown": "markdown", "md": "markdown",
+    "diff": "diff", "patch": "diff",
+}
+_CODE_BLOCK = re.compile(
+    r'<pre><code class="language-([^"\s]+)">(.*?)</code></pre>', re.DOTALL
+)
+_LIGHT_HIGHLIGHT_CSS = HtmlFormatter(style="tango").get_style_defs("code.highlight")
+_DARK_HIGHLIGHT_CSS = HtmlFormatter(style="monokai").get_style_defs("code.highlight")
 
 
 def read_source(path: Path) -> str:
@@ -168,8 +227,33 @@ def render_markdown(source: str, document_dir: Path | None = None) -> str:
         fragment = result.stdout.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise RenderError("Markdown renderer returned invalid UTF-8") from exc
-    body = _heading_ids(sanitize_fragment(fragment, document_dir))
+    body = sanitize_fragment(fragment, document_dir)
+    body = _heading_ids(_highlight_code_blocks(body))
     return _document(body)
+
+
+def _highlight_code_blocks(body: str) -> str:
+    """Highlight only fenced languages selected by the controlled allowlist."""
+
+    formatter = HtmlFormatter(nowrap=True)
+
+    def replace(match: re.Match[str]) -> str:
+        requested = unescape(match.group(1)).lower()
+        language = _LANGUAGE_ALIASES.get(requested)
+        if language is None:
+            return match.group(0)
+        code = unescape(match.group(2))
+        highlighted = highlight(code, _LEXERS[language](), formatter)
+        # A lexer/formatter must never be allowed to change the document text.
+        rendered_text = unescape(re.sub(r"<[^>]+>", "", highlighted))
+        if rendered_text != code:
+            return match.group(0)
+        return (
+            f'<pre><code class="highlight language-{language}">'
+            f"{highlighted}</code></pre>"
+        )
+
+    return _CODE_BLOCK.sub(replace, body)
 
 
 def error_document(message: str) -> str:
@@ -192,6 +276,7 @@ code, pre { font-family: ui-monospace, monospace; }
 code { padding: .12em .3em; border-radius: 4px; background: #e8e8e8; }
 pre { overflow-x: auto; padding: 1rem; border-radius: 7px; background: #eeeeee; }
 pre code { padding: 0; background: transparent; }
+""" + _LIGHT_HIGHLIGHT_CSS + """
 table { border-collapse: collapse; display: block; overflow-x: auto; max-width: 100%; }
 th, td { border: 1px solid #b9b9b9; padding: .4rem .65rem; }
 th { background: #e7e7e7; } .error { max-width: 42rem; }
@@ -199,6 +284,7 @@ th { background: #e7e7e7; } .error { max-width: 42rem; }
  body { background: #242424; color: #eee; } a { color: #78aeed; }
  blockquote { color: #bbb; border-color: #777; } code { background: #3b3b3b; }
  pre { background: #303030; } th { background: #3b3b3b; } th, td { border-color: #666; }
+ """ + _DARK_HIGHLIGHT_CSS + """
 }
 </style></head><body><main>""" + body + "</main></body></html>"
 

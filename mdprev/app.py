@@ -14,7 +14,7 @@ from gi.repository import Gio, GLib, Gtk, WebKit  # noqa: E402
 from .render import RenderError, error_document, read_source, render_markdown  # noqa: E402
 
 
-APP_ID = "io.github.yzhang.mdprev"
+APP_ID = "io.github.yszhangit.mdprev"
 
 
 class PreviewWindow(Gtk.ApplicationWindow):

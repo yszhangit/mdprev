@@ -8,8 +8,8 @@ desktop_home="$data_home/applications"
 icon_home="$data_home/icons/hicolor/scalable/apps"
 
 rm -f "$bin_home/mdprev" \
-  "$desktop_home/io.github.yzhang.mdprev.desktop" \
-  "$icon_home/io.github.yzhang.mdprev.svg"
+  "$desktop_home/io.github.yszhangit.mdprev.desktop" \
+  "$icon_home/io.github.yszhangit.mdprev.svg"
 rm -rf "$app_home"
 update-desktop-database "$desktop_home" >/dev/null 2>&1 || true
 gtk-update-icon-cache -f -t "$data_home/icons/hicolor" >/dev/null 2>&1 || true

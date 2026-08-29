@@ -8,7 +8,7 @@ uses the system GTK 4, WebKitGTK 6.0, and cmark-gfm packages.
 Install the Ubuntu runtime packages:
 
 ```sh
-sudo apt install cmark-gfm gir1.2-gtk-4.0 gir1.2-webkit-6.0
+sudo apt install cmark-gfm gir1.2-gtk-4.0 gir1.2-webkit-6.0 python3-pygments
 ```
 
 Then install MdPrev for the current user:
@@ -26,20 +26,22 @@ mdprev path/to/document.md
 To explicitly make it the default Markdown handler:
 
 ```sh
-xdg-mime default io.github.yzhang.mdprev.desktop text/markdown
-xdg-mime default io.github.yzhang.mdprev.desktop text/x-markdown
+xdg-mime default io.github.yszhangit.mdprev.desktop text/markdown
+xdg-mime default io.github.yszhangit.mdprev.desktop text/x-markdown
 ```
 
 The previous default can be restored with `xdg-mime default
 <previous-desktop-file> <mime-type>`. Uninstalling leaves MIME defaults
 untouched so unrelated preferences are not overwritten.
 
-## MVP 1 behavior
+## Behavior
 
 CommonMark and GFM tables, task lists, strikethrough, and autolinks are
 supported. The preview reloads after saves and permits document-relative local
 images. JavaScript, raw HTML, remote images, and unsafe links are disabled.
-The source file is never modified.
+Selected fenced-code languages are highlighted by Pygments using light and
+dark palettes; missing or unknown language tags remain plain code. The source
+file is never modified.
 
 ## Uninstall
 

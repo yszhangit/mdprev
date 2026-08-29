@@ -8,4 +8,4 @@ Terminal=false
 Categories=Office;Viewer;GTK;
 MimeType=text/markdown;text/x-markdown;
 StartupNotify=true
-StartupWMClass=io.github.yzhang.mdprev
+StartupWMClass=io.github.yszhangit.mdprev
