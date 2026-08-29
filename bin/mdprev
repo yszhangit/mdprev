@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+app_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../share/mdprev" && pwd)
+export PYTHONPATH="$app_dir${PYTHONPATH:+:$PYTHONPATH}"
+exec /usr/bin/python3 -m mdprev "$@"
