@@ -130,3 +130,25 @@ def test_missing_file_is_reported(tmp_path: Path):
 def test_error_document_escapes_text():
     assert "&lt;script&gt;" in error_document("<script>")
     assert "<script>" not in error_document("<script>")
+
+
+def test_custom_font_selection():
+    html_serif = render_markdown("# Title\n\nText", font="serif")
+    assert "DejaVu Serif" in html_serif
+
+    html_sans = render_markdown("# Title\n\nText", font="sans")
+    assert "Ubuntu" in html_sans
+
+    html_mono = render_markdown("# Title\n\nText", font="mono")
+    assert "Ubuntu Sans Mono" in html_mono
+
+
+def test_theme_selection():
+    for theme in ("system", "light", "dark", "sepia"):
+        html = render_markdown("# Title\n\nText", theme=theme)
+        assert f'data-theme="{theme}"' in html
+
+    # Fallback to system for invalid theme
+    html_invalid = render_markdown("# Title\n\nText", theme="nonexistent")
+    assert 'data-theme="system"' in html_invalid
+

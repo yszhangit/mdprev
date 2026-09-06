@@ -25,6 +25,12 @@ class PreviewWindow(Gtk.ApplicationWindow):
         self._monitor: Gio.FileMonitor | None = None
         self._reload_source: int = 0
         self.set_default_size(920, 720)
+
+        # Reader state
+        self._font: str = "system"
+        self._theme: str = "system"
+
+        # Webview
         self._webview = WebKit.WebView()
         settings = self._webview.get_settings()
         settings.set_enable_javascript(False)
@@ -32,9 +38,151 @@ class PreviewWindow(Gtk.ApplicationWindow):
         self._webview.connect("decide-policy", self._decide_policy)
         self._webview.connect("load-changed", self._load_changed)
         self._pending_scroll_y: float | None = None
-        self.set_child(self._webview)
+
+        # Build UI layout with native GTK HeaderBar
+        self._setup_ui()
+        self._setup_actions()
+
         self._monitor_path()
         self.load_document()
+
+    def _setup_ui(self) -> None:
+        header_bar = Gtk.HeaderBar()
+        self.set_titlebar(header_bar)
+
+        # Reader preferences popover
+        menu_button = Gtk.MenuButton()
+        menu_button.set_icon_name("view-paged-symbolic")
+        menu_button.set_tooltip_text("Display options")
+
+        popover = Gtk.Popover()
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        box.set_margin_top(8)
+        box.set_margin_bottom(8)
+        box.set_margin_start(10)
+        box.set_margin_end(10)
+
+        # Zoom Controls
+        zoom_label = Gtk.Label(label="Zoom", xalign=0.0)
+        zoom_label.add_css_class("heading")
+        box.append(zoom_label)
+
+        zoom_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        zoom_out_btn = Gtk.Button(icon_name="zoom-out-symbolic")
+        zoom_out_btn.set_tooltip_text("Zoom out (Ctrl+-)")
+        zoom_out_btn.connect("clicked", lambda _: self._zoom_out())
+        self._zoom_reset_btn = Gtk.Button(label="100%")
+        self._zoom_reset_btn.set_tooltip_text("Reset zoom (Ctrl+0)")
+        self._zoom_reset_btn.connect("clicked", lambda _: self._zoom_reset())
+        zoom_in_btn = Gtk.Button(icon_name="zoom-in-symbolic")
+        zoom_in_btn.set_tooltip_text("Zoom in (Ctrl++)")
+        zoom_in_btn.connect("clicked", lambda _: self._zoom_in())
+
+        zoom_box.append(zoom_out_btn)
+        zoom_box.append(self._zoom_reset_btn)
+        zoom_box.append(zoom_in_btn)
+        box.append(zoom_box)
+
+        # Font Family Controls
+        font_label = Gtk.Label(label="Font Family", xalign=0.0)
+        font_label.add_css_class("heading")
+        box.append(font_label)
+
+        font_dropdown = Gtk.DropDown.new_from_strings([
+            "Default (System UI)",
+            "Ubuntu / Cantarell (Sans)",
+            "DejaVu / Noto (Serif)",
+            "Ubuntu Mono (Monospace)",
+        ])
+        font_keys = ["system", "sans", "serif", "mono"]
+        font_dropdown.connect("notify::selected", self._on_font_selected, font_keys)
+        box.append(font_dropdown)
+
+        # Theme Controls
+        theme_label = Gtk.Label(label="Theme", xalign=0.0)
+        theme_label.add_css_class("heading")
+        box.append(theme_label)
+
+        theme_dropdown = Gtk.DropDown.new_from_strings([
+            "System (Auto)",
+            "Light",
+            "Dark",
+            "Sepia",
+        ])
+        theme_keys = ["system", "light", "dark", "sepia"]
+        theme_dropdown.connect("notify::selected", self._on_theme_selected, theme_keys)
+        box.append(theme_dropdown)
+
+        self._popover = popover
+        popover.set_child(box)
+        menu_button.set_popover(popover)
+        header_bar.pack_end(menu_button)
+
+        self.set_child(self._webview)
+
+    def _setup_actions(self) -> None:
+        # Keyboard shortcuts for zoom
+        action_zoom_in = Gio.SimpleAction.new("zoom-in", None)
+        action_zoom_in.connect("activate", lambda *_: self._zoom_in())
+        self.add_action(action_zoom_in)
+
+        action_zoom_out = Gio.SimpleAction.new("zoom-out", None)
+        action_zoom_out.connect("activate", lambda *_: self._zoom_out())
+        self.add_action(action_zoom_out)
+
+        action_zoom_reset = Gio.SimpleAction.new("zoom-reset", None)
+        action_zoom_reset.connect("activate", lambda *_: self._zoom_reset())
+        self.add_action(action_zoom_reset)
+
+    def _update_zoom_label(self, level: float) -> None:
+        pct = int(round(level * 100))
+        if hasattr(self, "_zoom_reset_btn") and self._zoom_reset_btn:
+            self._zoom_reset_btn.set_label(f"{pct}%")
+
+    def _zoom_in(self) -> None:
+        level = self._webview.get_zoom_level()
+        new_level = min(level + 0.1, 3.0)
+        self._webview.set_zoom_level(new_level)
+        self._update_zoom_label(new_level)
+
+    def _zoom_out(self) -> None:
+        level = self._webview.get_zoom_level()
+        new_level = max(level - 0.1, 0.5)
+        self._webview.set_zoom_level(new_level)
+        self._update_zoom_label(new_level)
+
+    def _zoom_reset(self) -> None:
+        self._webview.set_zoom_level(1.0)
+        self._update_zoom_label(1.0)
+
+    def _on_font_selected(self, dropdown, _param, font_keys: list[str]) -> None:
+        idx = dropdown.get_selected()
+        if 0 <= idx < len(font_keys):
+            new_font = font_keys[idx]
+            if new_font != self._font:
+                self._font = new_font
+                self.refresh_document()
+                # Ensure the display options popover stays open
+                if hasattr(self, "_popover") and self._popover:
+                    self._popover.popup()
+
+    def _on_theme_selected(self, dropdown, _param, theme_keys: list[str]) -> None:
+        idx = dropdown.get_selected()
+        if 0 <= idx < len(theme_keys):
+            new_theme = theme_keys[idx]
+            if new_theme != self._theme:
+                self._theme = new_theme
+                self.refresh_document()
+                # Ensure the display options popover stays open
+                if hasattr(self, "_popover") and self._popover:
+                    self._popover.popup()
+
+    def refresh_document(self) -> None:
+        script = "window.scrollY"
+        self._webview.get_settings().set_enable_javascript(True)
+        self._webview.evaluate_javascript(
+            script, len(script), None, None, None, self._scroll_captured, None
+        )
 
     def _monitor_path(self) -> None:
         if self._monitor:
@@ -82,9 +230,18 @@ class PreviewWindow(Gtk.ApplicationWindow):
         self.set_title(self.path.name)
         try:
             source = read_source(self.path)
-            html = render_markdown(source, self.path.parent)
+            html = render_markdown(
+                source,
+                self.path.parent,
+                font=self._font,
+                theme=self._theme,
+            )
         except RenderError as exc:
-            html = error_document(str(exc))
+            html = error_document(
+                str(exc),
+                font=self._font,
+                theme=self._theme,
+            )
         base_uri = self.path.parent.as_uri()
         if not base_uri.endswith("/"):
             base_uri += "/"
@@ -160,6 +317,12 @@ class MdPrevApplication(Gtk.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.HANDLES_OPEN)
         self._windows: dict[Path, PreviewWindow] = {}
+
+    def do_startup(self) -> None:
+        Gtk.Application.do_startup(self)
+        self.set_accels_for_action("win.zoom-in", ["<Ctrl>plus", "<Ctrl>equal", "<Ctrl>KP_Add"])
+        self.set_accels_for_action("win.zoom-out", ["<Ctrl>minus", "<Ctrl>KP_Subtract"])
+        self.set_accels_for_action("win.zoom-reset", ["<Ctrl>0", "<Ctrl>KP_0"])
 
     def do_activate(self) -> None:
         # File launches arrive through do_open().  Do not silently substitute a

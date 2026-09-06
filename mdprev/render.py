@@ -207,7 +207,27 @@ def sanitize_fragment(fragment: str, document_dir: Path | None = None) -> str:
     return "".join(parser.parts)
 
 
-def render_markdown(source: str, document_dir: Path | None = None) -> str:
+_FONTS = {
+    "system": "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+    "sans": "'Ubuntu', 'Ubuntu Sans', 'Cantarell', system-ui, sans-serif",
+    "serif": "'DejaVu Serif', 'Noto Serif', 'Liberation Serif', serif",
+    "mono": "'Ubuntu Sans Mono', 'Ubuntu Mono', 'DejaVu Sans Mono', 'Liberation Mono', ui-monospace, monospace",
+}
+
+_THEMES = {
+    "system",
+    "light",
+    "dark",
+    "sepia",
+}
+
+
+def render_markdown(
+    source: str,
+    document_dir: Path | None = None,
+    font: str = "system",
+    theme: str = "system",
+) -> str:
     """Return a complete safe HTML document for Markdown source."""
 
     command = [_CMARK, "--to", "html"]
@@ -229,7 +249,7 @@ def render_markdown(source: str, document_dir: Path | None = None) -> str:
         raise RenderError("Markdown renderer returned invalid UTF-8") from exc
     body = sanitize_fragment(fragment, document_dir)
     body = _heading_ids(_highlight_code_blocks(body))
-    return _document(body)
+    return _document(body, font=font, theme=theme)
 
 
 def _highlight_code_blocks(body: str) -> str:
@@ -256,37 +276,132 @@ def _highlight_code_blocks(body: str) -> str:
     return _CODE_BLOCK.sub(replace, body)
 
 
-def error_document(message: str) -> str:
-    return _document(f'<div class="error"><h1>Unable to preview file</h1><p>{escape(message)}</p></div>')
+def error_document(message: str, font: str = "system", theme: str = "system") -> str:
+    return _document(
+        f'<div class="error"><h1>Unable to preview file</h1><p>{escape(message)}</p></div>',
+        font=font,
+        theme=theme,
+    )
 
 
-def _document(body: str) -> str:
-    return """<!doctype html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+def _document(body: str, font: str = "system", theme: str = "system") -> str:
+    font_stack = _FONTS.get(font, _FONTS["system"])
+    theme_attr = theme if theme in _THEMES else "system"
+    return f"""<!doctype html>
+<html data-theme="{theme_attr}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-:root { color-scheme: light dark; }
-html, body { margin: 0; padding: 0; }
-body { background: #fafafa; color: #242424; font: 16px/1.55 system-ui, sans-serif; }
-main { max-width: 52rem; margin: 0 auto; padding: 2.5rem 2rem 5rem; }
-h1, h2, h3, h4, h5, h6 { line-height: 1.2; margin: 1.6em 0 .6em; }
-h1 { font-size: 2.1rem; } h2 { font-size: 1.6rem; }
-a { color: #1a5fb4; } img { max-width: 100%; height: auto; }
-blockquote { margin: 1rem 0; padding: .2rem 1rem; border-left: 4px solid #bbb; color: #555; }
-code, pre { font-family: ui-monospace, monospace; }
-code { padding: .12em .3em; border-radius: 4px; background: #e8e8e8; }
-pre { overflow-x: auto; padding: 1rem; border-radius: 7px; background: #eeeeee; }
-pre code { padding: 0; background: transparent; }
-""" + _LIGHT_HIGHLIGHT_CSS + """
-table { border-collapse: collapse; display: block; overflow-x: auto; max-width: 100%; }
-th, td { border: 1px solid #b9b9b9; padding: .4rem .65rem; }
-th { background: #e7e7e7; } .error { max-width: 42rem; }
-@media (prefers-color-scheme: dark) {
- body { background: #242424; color: #eee; } a { color: #78aeed; }
- blockquote { color: #bbb; border-color: #777; } code { background: #3b3b3b; }
- pre { background: #303030; } th { background: #3b3b3b; } th, td { border-color: #666; }
- """ + _DARK_HIGHLIGHT_CSS + """
-}
-</style></head><body><main>""" + body + "</main></body></html>"
+:root {{
+  --font-body: {font_stack};
+  --bg: #fafafa;
+  --text: #242424;
+  --link: #1a5fb4;
+  --code-bg: #e8e8e8;
+  --pre-bg: #eeeeee;
+  --quote-color: #555555;
+  --quote-border: #bbbbbb;
+  --table-border: #b9b9b9;
+  --th-bg: #e7e7e7;
+}}
+
+html[data-theme="system"] {{
+  color-scheme: light dark;
+}}
+
+@media (prefers-color-scheme: dark) {{
+  html[data-theme="system"] {{
+    --bg: #242424;
+    --text: #eeeeee;
+    --link: #78aeed;
+    --code-bg: #3b3b3b;
+    --pre-bg: #303030;
+    --quote-color: #bbbbbb;
+    --quote-border: #777777;
+    --table-border: #666666;
+    --th-bg: #3b3b3b;
+  }}
+}}
+
+html[data-theme="light"] {{
+  color-scheme: light;
+  --bg: #fafafa;
+  --text: #242424;
+  --link: #1a5fb4;
+  --code-bg: #e8e8e8;
+  --pre-bg: #eeeeee;
+  --quote-color: #555555;
+  --quote-border: #bbbbbb;
+  --table-border: #b9b9b9;
+  --th-bg: #e7e7e7;
+}}
+
+html[data-theme="dark"] {{
+  color-scheme: dark;
+  --bg: #242424;
+  --text: #eeeeee;
+  --link: #78aeed;
+  --code-bg: #3b3b3b;
+  --pre-bg: #303030;
+  --quote-color: #bbbbbb;
+  --quote-border: #777777;
+  --table-border: #666666;
+  --th-bg: #3b3b3b;
+}}
+
+html[data-theme="sepia"] {{
+  color-scheme: light;
+  --bg: #f4ecd8;
+  --text: #3c3226;
+  --link: #804a16;
+  --code-bg: #e8deca;
+  --pre-bg: #ebe1cd;
+  --quote-color: #6d5d4d;
+  --quote-border: #c8bba6;
+  --table-border: #c8bba6;
+  --th-bg: #e4d7bf;
+}}
+
+html, body {{ margin: 0; padding: 0; }}
+body {{
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.55;
+}}
+main {{ max-width: 52rem; margin: 0 auto; padding: 2.5rem 2rem 5rem; }}
+h1, h2, h3, h4, h5, h6 {{ line-height: 1.2; margin: 1.6em 0 .6em; }}
+h1 {{ font-size: 2.1rem; }} h2 {{ font-size: 1.6rem; }}
+a {{ color: var(--link); }} img {{ max-width: 100%; height: auto; }}
+blockquote {{ margin: 1rem 0; padding: .2rem 1rem; border-left: 4px solid var(--quote-border); color: var(--quote-color); }}
+code, pre {{ font-family: 'Ubuntu Sans Mono', 'Ubuntu Mono', 'DejaVu Sans Mono', ui-monospace, monospace; }}
+code {{ padding: .12em .3em; border-radius: 4px; background: var(--code-bg); }}
+pre {{ overflow-x: auto; padding: 1rem; border-radius: 7px; background: var(--pre-bg); }}
+pre code {{ padding: 0; background: transparent; }}
+
+/* Light / Sepia syntax highlighting */
+html[data-theme="light"] code.highlight,
+html[data-theme="sepia"] code.highlight {{
+{_LIGHT_HIGHLIGHT_CSS}
+}}
+html[data-theme="system"] code.highlight {{
+{_LIGHT_HIGHLIGHT_CSS}
+}}
+
+/* Dark syntax highlighting */
+html[data-theme="dark"] code.highlight {{
+{_DARK_HIGHLIGHT_CSS}
+}}
+
+@media (prefers-color-scheme: dark) {{
+  html[data-theme="system"] code.highlight {{
+{_DARK_HIGHLIGHT_CSS}
+  }}
+}}
+
+table {{ border-collapse: collapse; display: block; overflow-x: auto; max-width: 100%; }}
+th, td {{ border: 1px solid var(--table-border); padding: .4rem .65rem; }}
+th {{ background: var(--th-bg); }} .error {{ max-width: 42rem; }}
+</style></head><body><main>{body}</main></body></html>"""
 
 
 def _heading_ids(body: str) -> str:

@@ -40,8 +40,11 @@ CommonMark and GFM tables, task lists, strikethrough, and autolinks are
 supported. The preview reloads after saves and permits document-relative local
 images. JavaScript, raw HTML, remote images, and unsafe links are disabled.
 Selected fenced-code languages are highlighted by Pygments using light and
-dark palettes; missing or unknown language tags remain plain code. The source
-file is never modified.
+dark palettes; missing or unknown language tags remain plain code.
+
+Reader display options (font family and color theme) can be changed via the
+header bar menu. Zoom level can be adjusted with `Ctrl`+`+` (zoom in),
+`Ctrl`+`-` (zoom out), and `Ctrl`+`0` (reset zoom). The source file is never modified.
 
 ## Uninstall
 

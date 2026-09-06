@@ -195,13 +195,43 @@ Common aliases such as `sh`, `bash`, `py`, `js`, `ts`, `yml`, `html`, `cpp`,
 5. Code content cannot inject HTML or script behavior.
 6. MVP 1 acceptance criteria continue to pass.
 
-## 5. Deferred features
+## 5. MVP 3: reader display controls (fonts and themes)
 
-The following are outside MVP 1 and MVP 2:
+### 5.1 Required behavior
+
+- Allow the user to adjust font family from preinstalled Ubuntu GNOME system fonts.
+  Supported font families:
+  - System default (`system-ui, sans-serif`)
+  - Ubuntu / Cantarell (Sans)
+  - Serif (e.g. `DejaVu Serif, serif`)
+  - Monospace (e.g. `Ubuntu Sans Mono, DejaVu Sans Mono, monospace`)
+- Increase, decrease, and reset text zoom/font size (e.g. via keyboard shortcuts
+  `Ctrl`+`+`, `Ctrl`+`-`, `Ctrl`+`0` and/or headerbar reader controls).
+- Switch document color themes:
+  - System (tracks GNOME light/dark preference automatically)
+  - Light
+  - Dark
+  - Sepia (warm paper-like reader theme)
+- Preserve reader preferences across reload.
+- Preserve vertical reading position during font or theme adjustments.
+- Maintain no-JavaScript and strict HTML sanitization constraints.
+
+### 5.2 MVP 3 acceptance criteria
+
+1. Changing font selection updates rendered document typography cleanly.
+2. Increasing, decreasing, and resetting font size changes magnification as expected.
+3. Theme switcher cleanly switches between System, Light, Dark, and Sepia palettes.
+4. All syntax highlighting remains legible across Light, Dark, and Sepia themes.
+5. Auto-reload and scroll preservation continue to work under custom font/theme settings.
+6. MVP 1 and MVP 2 acceptance criteria continue to pass.
+
+## 6. Deferred features
+
+The following are outside MVP 1, MVP 2, and MVP 3:
 
 - Markdown editing or split editor/preview
 - Tabs, session restoration, and recent-file management
-- Preferences UI
+- Preferences dialog window or complex settings sync
 - Raw HTML rendering
 - JavaScript
 - Remote images or embedded remote content
@@ -212,7 +242,7 @@ The following are outside MVP 1 and MVP 2:
 - YAML front matter presentation
 - Generated table of contents/sidebar
 - Wiki links and file includes
-- Custom user CSS or theme selection
+- Custom arbitrary user CSS upload
 - Interactive task-list editing
 - Audio and video embeds
 - Printing or PDF export
@@ -223,7 +253,7 @@ The following are outside MVP 1 and MVP 2:
 
 Deferred features require an explicit requirements change before implementation.
 
-## 6. Non-goals and quality priorities
+## 7. Non-goals and quality priorities
 
 When tradeoffs arise, prioritize in this order:
 
@@ -236,3 +266,4 @@ When tradeoffs arise, prioritize in this order:
 
 The application should remain small enough for a new GUI developer to
 understand and maintain.
+
