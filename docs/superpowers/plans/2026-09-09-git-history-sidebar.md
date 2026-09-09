@@ -21,7 +21,12 @@
 - No broad `except Exception`. Convert expected pygit2, I/O, and decoding failures into `GitHistoryError` with concise user-facing text.
 - Use `pathlib` for filesystem paths. No shell interpolation anywhere.
 - All settings are global. Per-file preferences are a non-goal (spec §2).
-- Every task ends with `python3 -m pytest` and `ruff check .` passing before the commit.
+- **Use `/usr/bin/python3` for every test run.** A conda Python 3.13 shadows
+  `python3` on PATH in this environment and has neither `gi` nor `pygit2`, so a
+  bare `python3 -m pytest` would silently skip every `importorskip("pygit2")`
+  test and report green. The system Python 3.14 has pytest, pygments, gi, and
+  pygit2 1.19.1, and is what `bin/mdprev` executes.
+- Every task ends with `/usr/bin/python3 -m pytest` and `ruff check .` passing before the commit.
 
 ## Deviations from the spec, resolved here
 
@@ -45,13 +50,16 @@ pygit2 is not installed in this checkout. Install it first, then confirm the API
 - Consumes: nothing.
 - Produces: `git_history.AVAILABLE: bool`, `git_history.GitHistoryError`, `git_history.Commit`, `git_history.Cursor`, `git_history.History`, `git_history.MAX_SCAN`.
 
-- [ ] **Step 1: Install pygit2**
+- [x] **Step 1: Install pygit2** — ALREADY DONE
+
+`python3-pygit2` 1.19.1-1build1 is installed for `/usr/bin/python3` (3.14).
+Do not re-install. Verify with:
 
 ```bash
-sudo apt install python3-pygit2
+/usr/bin/python3 -c "import pygit2; print(pygit2.__version__)"
 ```
 
-Expected: `python3-pygit2` 1.19.1 or later installs from resolute/universe.
+Expected: `1.19.1`
 
 - [ ] **Step 2: Probe the API surface this plan assumes**
 
@@ -78,7 +86,24 @@ for name in ("find_similar", "patch"):
 PROBE
 ```
 
-Expected: every line prints without `MISSING` and without an `ImportError`. If any name differs in this pygit2 build, adjust the affected task's code to the real name and note the substitution in the commit message. Do not proceed with a name the probe says is missing.
+**This probe has already been run against pygit2 1.19.1 / libgit2 1.9.1, and every
+call the plan makes is confirmed working.** Do not re-run it. Verified results:
+
+- `SortMode.TOPOLOGICAL | SortMode.TIME`, `DeltaStatus.RENAMED`,
+  `FileStatus.CURRENT` (0) and `FileStatus.IGNORED` all exist in `pygit2.enums`.
+- Nested tree lookup segment-by-segment (`node = node[part]`) returns a `Blob`
+  with working `.is_binary` and `.data`.
+- `repo.revparse_single("not-a-sha")` raises `KeyError`.
+- `repo.status_file()` returns `0` for a clean file, `256` (`WT_MODIFIED`) when
+  edited, and raises `KeyError` for an absent path. `"path" in repo.index` works.
+- `Patch.create_from` works in all three forms the plan uses — blob to blob,
+  `None` to blob (root commit, emits `new file mode`), and blob to `bytes`
+  (working copy) — and returns `''` for identical blobs, so `patch.text or ""`
+  is correct.
+- `diff.find_similar()` then `delta.status == DeltaStatus.RENAMED` correctly
+  reports `old.md -> new.md`.
+- Real `patch.text` begins `diff --git a/... b/...`, then an `index` line, then
+  `--- a/...`, `+++ b/...`, then `@@` hunks. The Task 6 assertions match this.
 
 - [ ] **Step 3: Write the failing test**
 
@@ -126,7 +151,7 @@ def test_max_scan_is_bounded():
 
 - [ ] **Step 4: Run the test to verify it fails**
 
-Run: `python3 -m pytest tests/test_git_history.py -v`
+Run: `/usr/bin/python3 -m pytest tests/test_git_history.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'mdprev.git_history'`
 
 - [ ] **Step 5: Write the module skeleton**
@@ -203,7 +228,7 @@ class History:
 
 - [ ] **Step 6: Run the test to verify it passes**
 
-Run: `python3 -m pytest tests/test_git_history.py -v`
+Run: `/usr/bin/python3 -m pytest tests/test_git_history.py -v`
 Expected: 5 passed
 
 - [ ] **Step 7: Run ruff**
@@ -318,7 +343,7 @@ Add `from pathlib import Path` to the test module's imports.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `python3 -m pytest tests/test_git_history.py -v`
+Run: `/usr/bin/python3 -m pytest tests/test_git_history.py -v`
 Expected: FAIL with `AttributeError: module 'mdprev.git_history' has no attribute 'find_repository'`
 
 - [ ] **Step 3: Write the implementation**
@@ -372,7 +397,7 @@ def is_tracked(repo, path: Path) -> bool:
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `python3 -m pytest tests/test_git_history.py -v`
+Run: `/usr/bin/python3 -m pytest tests/test_git_history.py -v`
 Expected: 11 passed
 
 - [ ] **Step 5: Run ruff**
@@ -540,7 +565,7 @@ def test_history_resumes_after_a_truncated_walk(repo_factory, monkeypatch):
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `python3 -m pytest tests/test_git_history.py -v`
+Run: `/usr/bin/python3 -m pytest tests/test_git_history.py -v`
 Expected: FAIL with `AttributeError: module 'mdprev.git_history' has no attribute 'history'`
 
 - [ ] **Step 3: Write the implementation**
@@ -637,7 +662,7 @@ def history(repo, path: Path, limit: int = 10, after: Cursor | None = None) -> H
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `python3 -m pytest tests/test_git_history.py -v`
+Run: `/usr/bin/python3 -m pytest tests/test_git_history.py -v`
 Expected: 22 passed
 
 - [ ] **Step 5: Run ruff**
@@ -722,7 +747,7 @@ def test_history_cursor_carries_the_path_across_a_rename(repo_factory):
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `python3 -m pytest tests/test_git_history.py -k rename -v`
+Run: `/usr/bin/python3 -m pytest tests/test_git_history.py -k rename -v`
 Expected: FAIL — `test_history_follows_a_rename` reports only `["Edit new", "Rename to new"]` because the walk loses the file at its old name.
 
 - [ ] **Step 3: Write the implementation**
@@ -765,7 +790,7 @@ In `history()`, replace the block from `commits.append(...)` through the limit c
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `python3 -m pytest tests/test_git_history.py -v`
+Run: `/usr/bin/python3 -m pytest tests/test_git_history.py -v`
 Expected: 25 passed
 
 - [ ] **Step 5: Run ruff**
@@ -840,7 +865,7 @@ def test_file_at_rejects_content_that_is_not_utf8(repo_factory):
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `python3 -m pytest tests/test_git_history.py -k file_at -v`
+Run: `/usr/bin/python3 -m pytest tests/test_git_history.py -k file_at -v`
 Expected: FAIL with `AttributeError: module 'mdprev.git_history' has no attribute 'file_at'`
 
 - [ ] **Step 3: Write the implementation**
@@ -877,7 +902,7 @@ def file_at(repo, sha: str, path: str) -> str:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `python3 -m pytest tests/test_git_history.py -v`
+Run: `/usr/bin/python3 -m pytest tests/test_git_history.py -v`
 Expected: 30 passed
 
 - [ ] **Step 5: Run ruff**
@@ -990,7 +1015,7 @@ def test_working_patch_reports_an_unreadable_file(repo_factory):
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `python3 -m pytest tests/test_git_history.py -k patch -v`
+Run: `/usr/bin/python3 -m pytest tests/test_git_history.py -k patch -v`
 Expected: FAIL with `AttributeError: module 'mdprev.git_history' has no attribute 'patch_for'`
 
 - [ ] **Step 3: Write the implementation**
@@ -1050,7 +1075,7 @@ def working_patch(repo, path: Path) -> str:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `python3 -m pytest tests/test_git_history.py -v`
+Run: `/usr/bin/python3 -m pytest tests/test_git_history.py -v`
 Expected: 37 passed
 
 If `Patch.create_from` produced different header text than the assertions expect, adjust the **assertions** to the real output — but only assertions about header formatting. The `@@`, `+line`, and `-line` assertions pin behavior that must hold.
@@ -1117,7 +1142,7 @@ def test_is_modified_is_false_for_a_path_outside_the_repository(repo_factory, tm
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `python3 -m pytest tests/test_git_history.py -k is_modified -v`
+Run: `/usr/bin/python3 -m pytest tests/test_git_history.py -k is_modified -v`
 Expected: FAIL with `AttributeError: module 'mdprev.git_history' has no attribute 'is_modified'`
 
 - [ ] **Step 3: Write the implementation**
@@ -1147,7 +1172,7 @@ def is_modified(repo, path: Path) -> bool:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `python3 -m pytest tests/test_git_history.py -v`
+Run: `/usr/bin/python3 -m pytest tests/test_git_history.py -v`
 Expected: 41 passed
 
 - [ ] **Step 5: Run ruff**
@@ -1229,7 +1254,7 @@ Ensure `tests/test_render.py` imports `re` and `from html import unescape`; add 
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `python3 -m pytest tests/test_render.py -k render_diff -v`
+Run: `/usr/bin/python3 -m pytest tests/test_render.py -k render_diff -v`
 Expected: FAIL with `AttributeError: module 'mdprev.render' has no attribute 'render_diff'`
 
 - [ ] **Step 3: Write the implementation**
@@ -1273,7 +1298,7 @@ Add the `.empty` rule to the stylesheet in `_document`, next to the existing `.e
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `python3 -m pytest tests/test_render.py -v`
+Run: `/usr/bin/python3 -m pytest tests/test_render.py -v`
 Expected: all existing tests plus 6 new ones pass
 
 - [ ] **Step 5: Run ruff**
@@ -1362,7 +1387,7 @@ Match the existing module's import style in `tests/test_preferences.py` when ref
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `python3 -m pytest tests/test_preferences.py -v`
+Run: `/usr/bin/python3 -m pytest tests/test_preferences.py -v`
 Expected: FAIL with `KeyError: 'sidebar_visible'`
 
 - [ ] **Step 3: Write the implementation**
@@ -1435,7 +1460,7 @@ Extend the `save_preferences` signature with `sidebar_visible: bool | None = Non
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `python3 -m pytest tests/test_preferences.py -v`
+Run: `/usr/bin/python3 -m pytest tests/test_preferences.py -v`
 Expected: all existing tests plus 5 new ones pass
 
 - [ ] **Step 5: Run ruff**
@@ -1783,12 +1808,12 @@ class HistorySidebar(Gtk.Box):
 
 - [ ] **Step 2: Verify the module imports cleanly**
 
-Run: `python3 -c "import mdprev.sidebar; print('ok')"`
+Run: `/usr/bin/python3 -c "import mdprev.sidebar; print('ok')"`
 Expected: `ok`
 
 - [ ] **Step 3: Confirm the existing suite still passes**
 
-Run: `python3 -m pytest`
+Run: `/usr/bin/python3 -m pytest`
 Expected: all tests pass
 
 - [ ] **Step 4: Run ruff**
@@ -2015,7 +2040,7 @@ In `close_request`, inside the existing `try` block, add `sidebar_width` to the 
 
 - [ ] **Step 8: Verify the module imports and the suite passes**
 
-Run: `python3 -c "import mdprev.app; print('ok')" && python3 -m pytest && ruff check .`
+Run: `/usr/bin/python3 -c "import mdprev.app; print('ok')" && python3 -m pytest && ruff check .`
 Expected: `ok`, all tests pass, no ruff findings
 
 - [ ] **Step 9: Commit**
@@ -2079,7 +2104,7 @@ Still inside `_reload_timeout`, the working-copy branch also needs the dot updat
 
 - [ ] **Step 4: Verify the suite still passes**
 
-Run: `python3 -m pytest && ruff check .`
+Run: `/usr/bin/python3 -m pytest && ruff check .`
 Expected: all tests pass, no ruff findings
 
 - [ ] **Step 5: Commit**
@@ -2230,7 +2255,7 @@ sidebar is unavailable.
 
 - [ ] **Step 6: Verify the suite still passes**
 
-Run: `python3 -m pytest && ruff check .`
+Run: `/usr/bin/python3 -m pytest && ruff check .`
 Expected: all tests pass, no ruff findings
 
 - [ ] **Step 7: Commit**
