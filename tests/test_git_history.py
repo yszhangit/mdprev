@@ -274,6 +274,22 @@ def rename_file(repo, workdir, old_relpath, new_relpath, message, when=170000030
     return str(oid)
 
 
+def rename_and_edit_file(repo, workdir, old_relpath, new_relpath, content, message,
+                          when=1700000300):
+    """Rename a tracked file and change its content in the same commit."""
+    (workdir / old_relpath).rename(workdir / new_relpath)
+    (workdir / new_relpath).write_bytes(
+        content if isinstance(content, bytes) else content.encode("utf-8")
+    )
+    repo.index.remove(old_relpath)
+    repo.index.add(new_relpath)
+    repo.index.write()
+    tree = repo.index.write_tree()
+    signature = pygit2.Signature("Test Author", "test@example.com", when, 0)
+    oid = repo.create_commit("HEAD", signature, signature, message, tree, [repo.head.target])
+    return str(oid)
+
+
 def test_history_follows_a_rename(repo_factory):
     repo, workdir = repo_factory()
     commit_file(repo, workdir, "old.md", "shared content\n" * 20, "Add old",
@@ -400,6 +416,22 @@ def test_patch_for_a_rename_diffs_against_the_old_name(repo_factory):
     patch = git_history.patch_for(repo, rename_sha, "new.md")
 
     assert "old.md" in patch
+
+
+def test_patch_for_a_rename_with_a_content_edit_shows_both(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "old.md", "shared content\n" * 20, "Add old",
+                when=1700000000)
+    rename_sha = rename_and_edit_file(
+        repo, workdir, "old.md", "new.md", "shared content\n" * 20 + "extra line\n",
+        "Rename and edit", when=1700000100,
+    )
+
+    patch = git_history.patch_for(repo, rename_sha, "new.md")
+
+    assert "old.md" in patch
+    assert "@@" in patch
+    assert "+extra line" in patch
 
 
 def test_patch_for_a_merge_uses_the_first_parent(repo_factory):

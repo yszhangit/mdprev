@@ -168,7 +168,11 @@ def _rename_patch(repo, parent, commit, tracked: str) -> pygit2.Patch | None:
 
 
 def _rename_source(repo, parent, commit, tracked: str) -> str | None:
-    """Return the file's previous name when this commit renamed it."""
+    """Return the file's previous name when this commit renamed it.
+
+    See _rename_patch for the calling convention this shares (only called
+    when the path exists in the commit and is absent from the parent).
+    """
 
     patch = _rename_patch(repo, parent, commit, tracked)
     return patch.delta.old_file.path if patch is not None else None
@@ -293,7 +297,13 @@ def patch_for(repo, sha: str, path: str) -> str:
 
 
 def working_patch(repo, path: Path) -> str:
-    """Return the unified diff of the file on disk against HEAD."""
+    """Return the unified diff of the file on disk against HEAD.
+
+    Unlike is_modified(), a path outside the repository is left to raise
+    GitHistoryError here rather than being swallowed: the caller renders that
+    error as visible text, and reporting an empty diff for a genuinely
+    invalid path would be misleading.
+    """
 
     relative = _relative_path(repo, path)
     old_blob = None
