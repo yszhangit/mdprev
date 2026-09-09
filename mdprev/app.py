@@ -11,8 +11,16 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("WebKit", "6.0")
 from gi.repository import Gio, GLib, Gtk, WebKit  # noqa: E402
 
+from . import git_history  # noqa: E402
 from .preferences import load_preferences, save_preferences  # noqa: E402
-from .render import RenderError, error_document, read_source, render_markdown  # noqa: E402
+from .render import (  # noqa: E402
+    RenderError,
+    error_document,
+    read_source,
+    render_diff,
+    render_markdown,
+)
+from .sidebar import HistorySidebar  # noqa: E402
 
 
 APP_ID = "io.github.yszhangit.mdprev"
@@ -30,6 +38,13 @@ class PreviewWindow(Gtk.ApplicationWindow):
         self._font: str = prefs.get("font", "system")
         self._theme: str = prefs.get("theme", "system")
         self._zoom_level: float = prefs.get("zoom_level", 1.0)
+        self._sidebar_width: int = prefs.get("sidebar_width", 280)
+        self._history_limit: int = prefs.get("history_limit", 10)
+        self._sidebar_visible: bool = prefs.get("sidebar_visible", False)
+        self._repo = git_history.find_repository(path) if git_history.AVAILABLE else None
+        # None means the working copy; a Commit means a historic revision.
+        self._revision_commit = None
+        self._mode = "rendered"
 
         width = prefs.get("window_width", 920)
         height = prefs.get("window_height", 720)
@@ -57,6 +72,17 @@ class PreviewWindow(Gtk.ApplicationWindow):
     def _setup_ui(self) -> None:
         header_bar = Gtk.HeaderBar()
         self.set_titlebar(header_bar)
+
+        title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        title_box.set_valign(Gtk.Align.CENTER)
+        self._title_label = Gtk.Label(label=self.path.name)
+        self._title_label.add_css_class("title")
+        self._subtitle_label = Gtk.Label(label="")
+        self._subtitle_label.add_css_class("subtitle")
+        self._subtitle_label.set_visible(False)
+        title_box.append(self._title_label)
+        title_box.append(self._subtitle_label)
+        header_bar.set_title_widget(title_box)
 
         # Reader preferences popover
         menu_button = Gtk.MenuButton()
@@ -131,7 +157,28 @@ class PreviewWindow(Gtk.ApplicationWindow):
         menu_button.set_popover(popover)
         header_bar.pack_end(menu_button)
 
-        self.set_child(self._webview)
+        self._sidebar = HistorySidebar(self._history_selected)
+        self._paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
+        self._paned.set_start_child(self._sidebar)
+        self._paned.set_end_child(self._webview)
+        self._paned.set_resize_start_child(False)
+        self._paned.set_shrink_start_child(False)
+        self._paned.set_position(self._sidebar_width)
+        self.set_child(self._paned)
+
+        if self._repo is not None:
+            self._sidebar_button = Gtk.ToggleButton()
+            self._sidebar_button.set_icon_name("view-sidebar-start-symbolic")
+            self._sidebar_button.set_tooltip_text("Git history (Ctrl+H)")
+            self._sidebar_button.set_active(self._sidebar_visible)
+            self._sidebar_button.connect("toggled", self._sidebar_toggled)
+            header_bar.pack_start(self._sidebar_button)
+        else:
+            self._sidebar_button = None
+            self._sidebar_visible = False
+        self._sidebar.set_visible(self._sidebar_visible)
+        if self._sidebar_visible:
+            self._sidebar.load(self._repo, self.path, self._history_limit)
 
     def _setup_actions(self) -> None:
         # Keyboard shortcuts for zoom
@@ -146,6 +193,16 @@ class PreviewWindow(Gtk.ApplicationWindow):
         action_zoom_reset = Gio.SimpleAction.new("zoom-reset", None)
         action_zoom_reset.connect("activate", lambda *_: self._zoom_reset())
         self.add_action(action_zoom_reset)
+
+        action_toggle_sidebar = Gio.SimpleAction.new("toggle-sidebar", None)
+        action_toggle_sidebar.connect(
+            "activate", lambda *_: self._set_sidebar_visible(not self._sidebar_visible)
+        )
+        self.add_action(action_toggle_sidebar)
+
+        action_working_copy = Gio.SimpleAction.new("working-copy", None)
+        action_working_copy.connect("activate", lambda *_: self._show_working_copy())
+        self.add_action(action_working_copy)
 
     def _update_zoom_label(self, level: float) -> None:
         pct = int(round(level * 100))
@@ -194,6 +251,54 @@ class PreviewWindow(Gtk.ApplicationWindow):
                 # Ensure the display options popover stays open
                 if hasattr(self, "_popover") and self._popover:
                     self._popover.popup()
+
+    def _sidebar_toggled(self, button: Gtk.ToggleButton) -> None:
+        self._set_sidebar_visible(button.get_active())
+
+    def _set_sidebar_visible(self, visible: bool) -> None:
+        if self._repo is None:
+            return
+        self._sidebar_visible = visible
+        self._sidebar.set_visible(visible)
+        if self._sidebar_button is not None and self._sidebar_button.get_active() != visible:
+            self._sidebar_button.set_active(visible)
+        if visible:
+            # Re-query on open: the .git directory is not watched, so a commit
+            # made externally appears the next time the sidebar is opened.
+            self._sidebar.load(self._repo, self.path, self._history_limit)
+        save_preferences(sidebar_visible=visible)
+
+    def _history_selected(self, commit, mode: str) -> None:
+        changed_revision = (
+            (commit.sha if commit else None)
+            != (self._revision_commit.sha if self._revision_commit else None)
+        )
+        self._revision_commit = commit
+        self._mode = mode
+        self._update_titles()
+        if changed_revision:
+            # A different document: start at the top rather than restoring an
+            # offset that means nothing here.
+            self.load_document()
+        else:
+            self.refresh_document()
+
+    def _show_working_copy(self) -> None:
+        if self._revision_commit is None:
+            return
+        self._sidebar.select_working_copy()
+
+    def _update_titles(self) -> None:
+        if self._revision_commit is None:
+            self.set_title(self.path.name)
+            self._subtitle_label.set_visible(False)
+            return
+        short = self._revision_commit.short_sha
+        self.set_title(f"{self.path.name} — {short}")
+        self._subtitle_label.set_text(
+            f"{short} · {self._revision_commit.when.strftime('%b %-d, %Y')}"
+        )
+        self._subtitle_label.set_visible(True)
 
     def refresh_document(self) -> None:
         script = "window.scrollY"
@@ -245,21 +350,31 @@ class PreviewWindow(Gtk.ApplicationWindow):
         self.load_document(scroll_y)
 
     def load_document(self, restore_scroll_y: float | None = None) -> None:
-        self.set_title(self.path.name)
+        self._title_label.set_text(self.path.name)
+        self._update_titles()
         try:
-            source = read_source(self.path)
-            html = render_markdown(
-                source,
-                self.path.parent,
-                font=self._font,
-                theme=self._theme,
-            )
-        except RenderError as exc:
-            html = error_document(
-                str(exc),
-                font=self._font,
-                theme=self._theme,
-            )
+            if self._mode == "diff":
+                if self._revision_commit is None:
+                    patch = git_history.working_patch(self._repo, self.path)
+                else:
+                    patch = git_history.patch_for(
+                        self._repo, self._revision_commit.sha, self._revision_commit.path
+                    )
+                html = render_diff(patch, font=self._font, theme=self._theme)
+            elif self._revision_commit is None:
+                source = read_source(self.path)
+                html = render_markdown(
+                    source, self.path.parent, font=self._font, theme=self._theme
+                )
+            else:
+                source = git_history.file_at(
+                    self._repo, self._revision_commit.sha, self._revision_commit.path
+                )
+                html = render_markdown(
+                    source, self.path.parent, font=self._font, theme=self._theme
+                )
+        except (RenderError, git_history.GitHistoryError) as exc:
+            html = error_document(str(exc), font=self._font, theme=self._theme)
         base_uri = self.path.parent.as_uri()
         if not base_uri.endswith("/"):
             base_uri += "/"
@@ -335,6 +450,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
                 window_width=width,
                 window_height=height,
                 window_maximized=is_max,
+                sidebar_width=self._paned.get_position(),
             )
         except Exception:
             pass
@@ -351,6 +467,8 @@ class MdPrevApplication(Gtk.Application):
         self.set_accels_for_action("win.zoom-in", ["<Ctrl>plus", "<Ctrl>equal", "<Ctrl>KP_Add"])
         self.set_accels_for_action("win.zoom-out", ["<Ctrl>minus", "<Ctrl>KP_Subtract"])
         self.set_accels_for_action("win.zoom-reset", ["<Ctrl>0", "<Ctrl>KP_0"])
+        self.set_accels_for_action("win.toggle-sidebar", ["<Ctrl>h"])
+        self.set_accels_for_action("win.working-copy", ["Escape"])
 
     def do_activate(self) -> None:
         # File launches arrive through do_open().  Do not silently substitute a
