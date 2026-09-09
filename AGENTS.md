@@ -19,6 +19,7 @@ MVP 1 before starting MVP 2.
 - WebKitGTK 6.0 (the GTK 4 API; do not use the GTK 3 `WebKit2 4.1` API)
 - `cmark-gfm` for Markdown-to-HTML conversion
 - `python3-pygments` only in MVP 2
+- `python3-pygit2` only in MVP 4, and only for the git history sidebar
 
 Do not introduce Qt, Electron, Tauri, Node.js, a JavaScript framework, a Python
 virtual environment, or a bundled web server.
@@ -37,6 +38,9 @@ virtual environment, or a bundled web server.
 - Local relative images may load from the opened document's directory.
 - External web links must open in the user's default browser.
 - Never modify the Markdown file.
+- The git integration is strictly read-only. Never check out, restore, stash,
+  or commit, and never write to the repository.
+- All settings are global. Do not add per-file preferences.
 
 ## Implementation guidance
 
@@ -78,7 +82,8 @@ virtual environment, or a bundled web server.
 
 Do not implement deferred features merely because a library makes them easy.
 In particular, do not add editing, tabs, preferences, raw HTML, remote images,
-JavaScript, diagrams, math rendering, PDF export, custom CSS, or plugins.
+JavaScript, diagrams, math rendering, PDF export, custom CSS, plugins,
+per-file preferences, or git write operations.
 
 MVP 2 adds syntax highlighting only after MVP 1 acceptance criteria pass. It
 must use Pygments on the Python side, allow only the documented language set,

@@ -39,6 +39,14 @@ MVP 2 additionally requires:
 python3-pygments
 ```
 
+MVP 4 additionally requires:
+
+```text
+python3-pygit2
+```
+
+MdPrev runs without it; the git history sidebar is simply unavailable.
+
 ## 3. MVP 1: basic Markdown display
 
 ### 3.1 Opening documents
@@ -225,9 +233,51 @@ Common aliases such as `sh`, `bash`, `py`, `js`, `ts`, `yml`, `html`, `cpp`,
 5. Auto-reload and scroll preservation continue to work under custom font/theme settings.
 6. MVP 1 and MVP 2 acceptance criteria continue to pass.
 
-## 6. Deferred features
+## 6. MVP 4: git history sidebar
 
-The following are outside MVP 1, MVP 2, and MVP 3:
+### 6.1 Required behavior
+
+- When the open document is inside a local git repository, offer a sidebar
+  listing the commits that touch that file, newest first.
+- Show a pinned "Working copy" entry above the commits, selected by default,
+  carrying a red dot and "Modified" when the file differs from HEAD (staged or
+  unstaged) and a green dot and "Unchanged" otherwise.
+- Follow renames, so history continues past a rename.
+- Render a selected revision either as formatted Markdown or as the
+  highlighted unified diff of its Markdown source against the previous
+  version.
+- Bound each query by a configurable commit limit (default 10) and by a
+  scanned-revision ceiling, and offer paging beyond the limit.
+- Treat historic content as untrusted: sanitize it exactly as the live file is
+  sanitized, and never render raw HTML or execute JavaScript.
+- Never write the source file and never write the repository.
+- Suppress live reload while a historic revision is displayed, updating only
+  the working-copy status indicator.
+- Persist sidebar visibility and width across sessions.
+- Behave exactly as MVP 3 did when pygit2 is not installed.
+
+### 6.2 MVP 4 acceptance criteria
+
+1. A document inside a repository shows a sidebar button; one outside a
+   repository does not.
+2. The sidebar lists commits touching the file, honoring the configured limit,
+   with paging beyond it.
+3. A renamed file's history continues past the rename.
+4. Selecting a commit renders that version with current font, theme, and
+   highlighting settings.
+5. The diff view is legible in Light, Dark, Sepia, and System themes.
+6. The working-copy indicator reflects staged and unstaged differences.
+7. Saving the file while a commit is selected leaves the preview untouched and
+   updates the indicator.
+8. Selecting the working copy restores live reload.
+9. Sidebar visibility and width persist across sessions.
+10. The source file and the repository are never written.
+11. MVP 1, MVP 2, and MVP 3 acceptance criteria continue to pass.
+12. With python3-pygit2 absent, the application behaves as it did before MVP 4.
+
+## 7. Deferred features
+
+The following are outside MVP 1, MVP 2, MVP 3, and MVP 4:
 
 - Markdown editing or split editor/preview
 - Tabs, session restoration, and recent-file management
@@ -240,7 +290,7 @@ The following are outside MVP 1, MVP 2, and MVP 3:
 - Footnotes
 - Emoji shortcodes
 - YAML front matter presentation
-- Generated table of contents/sidebar
+- Generated table of contents
 - Wiki links and file includes
 - Custom arbitrary user CSS upload
 - Interactive task-list editing
@@ -250,10 +300,14 @@ The following are outside MVP 1, MVP 2, and MVP 3:
 - Plugins
 - Packaging for non-Ubuntu Linux distributions
 - Windows or macOS support
+- Per-file preferences or per-document state restoration
+- Repository mutation of any kind: checkout, restore, stash, commit
+- Remote git information: fetch, upstream tracking, ahead/behind
+- Branch, tag, or ref browsing; blame; side-by-side or rendered-prose diffs
 
 Deferred features require an explicit requirements change before implementation.
 
-## 7. Non-goals and quality priorities
+## 8. Non-goals and quality priorities
 
 When tradeoffs arise, prioritize in this order:
 
