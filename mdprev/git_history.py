@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 try:
     import pygit2
@@ -62,3 +63,47 @@ class History:
     commits: list[Commit]
     truncated: bool
     next_cursor: Cursor | None
+
+
+def find_repository(path: Path) -> "pygit2.Repository | None":
+    """Return the repository containing path, or None when there is none."""
+
+    if not AVAILABLE:
+        return None
+    try:
+        discovered = pygit2.discover_repository(str(Path(path).parent))
+    except pygit2.GitError:
+        return None
+    if discovered is None:
+        return None
+    try:
+        repo = pygit2.Repository(discovered)
+    except pygit2.GitError:
+        return None
+    # A bare repository has no working tree, so no document can live inside it.
+    if repo.is_bare or repo.workdir is None:
+        return None
+    return repo
+
+
+def _relative_path(repo, path: Path) -> str:
+    """Return path as a repo-relative POSIX string."""
+
+    workdir = Path(repo.workdir).resolve()
+    try:
+        relative = Path(path).resolve().relative_to(workdir)
+    except ValueError as exc:
+        raise GitHistoryError(
+            f"{Path(path).name} is outside this repository"
+        ) from exc
+    return relative.as_posix()
+
+
+def is_tracked(repo, path: Path) -> bool:
+    """Report whether the file is in the index at all."""
+
+    try:
+        relative = _relative_path(repo, path)
+    except GitHistoryError:
+        return False
+    return relative in repo.index
