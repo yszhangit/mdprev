@@ -11,6 +11,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("WebKit", "6.0")
 from gi.repository import Gio, GLib, Gtk, WebKit  # noqa: E402
 
+from .preferences import load_preferences, save_preferences
 from .render import RenderError, error_document, read_source, render_markdown  # noqa: E402
 
 
@@ -24,14 +25,21 @@ class PreviewWindow(Gtk.ApplicationWindow):
         self.path = path
         self._monitor: Gio.FileMonitor | None = None
         self._reload_source: int = 0
-        self.set_default_size(920, 720)
+        # Reader state loaded from global user preferences
+        prefs = load_preferences()
+        self._font: str = prefs.get("font", "system")
+        self._theme: str = prefs.get("theme", "system")
+        self._zoom_level: float = prefs.get("zoom_level", 1.0)
 
-        # Reader state
-        self._font: str = "system"
-        self._theme: str = "system"
+        width = prefs.get("window_width", 920)
+        height = prefs.get("window_height", 720)
+        self.set_default_size(width, height)
+        if prefs.get("window_maximized", False):
+            self.maximize()
 
         # Webview
         self._webview = WebKit.WebView()
+        self._webview.set_zoom_level(self._zoom_level)
         settings = self._webview.get_settings()
         settings.set_enable_javascript(False)
         settings.set_auto_load_images(True)
@@ -71,7 +79,8 @@ class PreviewWindow(Gtk.ApplicationWindow):
         zoom_out_btn = Gtk.Button(icon_name="zoom-out-symbolic")
         zoom_out_btn.set_tooltip_text("Zoom out (Ctrl+-)")
         zoom_out_btn.connect("clicked", lambda _: self._zoom_out())
-        self._zoom_reset_btn = Gtk.Button(label="100%")
+        pct = int(round(self._zoom_level * 100))
+        self._zoom_reset_btn = Gtk.Button(label=f"{pct}%")
         self._zoom_reset_btn.set_tooltip_text("Reset zoom (Ctrl+0)")
         self._zoom_reset_btn.connect("clicked", lambda _: self._zoom_reset())
         zoom_in_btn = Gtk.Button(icon_name="zoom-in-symbolic")
@@ -95,6 +104,8 @@ class PreviewWindow(Gtk.ApplicationWindow):
             "Ubuntu Mono (Monospace)",
         ])
         font_keys = ["system", "sans", "serif", "mono"]
+        if self._font in font_keys:
+            font_dropdown.set_selected(font_keys.index(self._font))
         font_dropdown.connect("notify::selected", self._on_font_selected, font_keys)
         box.append(font_dropdown)
 
@@ -110,6 +121,8 @@ class PreviewWindow(Gtk.ApplicationWindow):
             "Sepia",
         ])
         theme_keys = ["system", "light", "dark", "sepia"]
+        if self._theme in theme_keys:
+            theme_dropdown.set_selected(theme_keys.index(self._theme))
         theme_dropdown.connect("notify::selected", self._on_theme_selected, theme_keys)
         box.append(theme_dropdown)
 
@@ -144,16 +157,19 @@ class PreviewWindow(Gtk.ApplicationWindow):
         new_level = min(level + 0.1, 3.0)
         self._webview.set_zoom_level(new_level)
         self._update_zoom_label(new_level)
+        save_preferences(zoom_level=new_level)
 
     def _zoom_out(self) -> None:
         level = self._webview.get_zoom_level()
         new_level = max(level - 0.1, 0.5)
         self._webview.set_zoom_level(new_level)
         self._update_zoom_label(new_level)
+        save_preferences(zoom_level=new_level)
 
     def _zoom_reset(self) -> None:
         self._webview.set_zoom_level(1.0)
         self._update_zoom_label(1.0)
+        save_preferences(zoom_level=1.0)
 
     def _on_font_selected(self, dropdown, _param, font_keys: list[str]) -> None:
         idx = dropdown.get_selected()
@@ -161,6 +177,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
             new_font = font_keys[idx]
             if new_font != self._font:
                 self._font = new_font
+                save_preferences(font=new_font)
                 self.refresh_document()
                 # Ensure the display options popover stays open
                 if hasattr(self, "_popover") and self._popover:
@@ -172,6 +189,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
             new_theme = theme_keys[idx]
             if new_theme != self._theme:
                 self._theme = new_theme
+                save_preferences(theme=new_theme)
                 self.refresh_document()
                 # Ensure the display options popover stays open
                 if hasattr(self, "_popover") and self._popover:
@@ -310,6 +328,16 @@ class PreviewWindow(Gtk.ApplicationWindow):
         if self._reload_source:
             GLib.source_remove(self._reload_source)
             self._reload_source = 0
+        try:
+            is_max = self.is_maximized()
+            width, height = self.get_default_size()
+            save_preferences(
+                window_width=width,
+                window_height=height,
+                window_maximized=is_max,
+            )
+        except Exception:
+            pass
         return False
 
 

@@ -212,7 +212,7 @@ Common aliases such as `sh`, `bash`, `py`, `js`, `ts`, `yml`, `html`, `cpp`,
   - Light
   - Dark
   - Sepia (warm paper-like reader theme)
-- Preserve reader preferences across reload.
+- Preserve reader preferences (font family, color theme, zoom level/font size, and window geometry) across application sessions and reloads in XDG user config.
 - Preserve vertical reading position during font or theme adjustments.
 - Maintain no-JavaScript and strict HTML sanitization constraints.
 

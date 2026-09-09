@@ -44,7 +44,8 @@ dark palettes; missing or unknown language tags remain plain code.
 
 Reader display options (font family and color theme) can be changed via the
 header bar menu. Zoom level can be adjusted with `Ctrl`+`+` (zoom in),
-`Ctrl`+`-` (zoom out), and `Ctrl`+`0` (reset zoom). The source file is never modified.
+`Ctrl`+`-` (zoom out), and `Ctrl`+`0` (reset zoom). Reader preferences (font family, theme,
+zoom level, and window size) are saved globally across sessions. The source file is never modified.
 
 ## Uninstall
 
