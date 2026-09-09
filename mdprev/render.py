@@ -284,6 +284,34 @@ def error_document(message: str, font: str = "system", theme: str = "system") ->
     )
 
 
+def render_diff(patch: str, font: str = "system", theme: str = "system") -> str:
+    """Return a complete HTML document showing a unified diff.
+
+    cmark is deliberately not involved: a patch must never be parsed as
+    Markdown.  Highlighting reuses the DiffLexer already available for fenced
+    code blocks, so themes and palettes apply unchanged.
+    """
+
+    if not patch.strip():
+        return _document(
+            '<p class="empty">No changes in this commit.</p>', font=font, theme=theme
+        )
+    highlighted = highlight(patch, DiffLexer(), HtmlFormatter(nowrap=True))
+    # The formatter must never be allowed to change the patch text.
+    rendered_text = unescape(re.sub(r"<[^>]+>", "", highlighted))
+    if rendered_text.rstrip("\n") != patch.rstrip("\n"):
+        return _document(
+            f'<pre><code class="language-diff">{escape(patch)}</code></pre>',
+            font=font,
+            theme=theme,
+        )
+    return _document(
+        f'<pre><code class="highlight language-diff">{highlighted}</code></pre>',
+        font=font,
+        theme=theme,
+    )
+
+
 def _document(body: str, font: str = "system", theme: str = "system") -> str:
     font_stack = _FONTS.get(font, _FONTS["system"])
     theme_attr = theme if theme in _THEMES else "system"
@@ -401,6 +429,7 @@ html[data-theme="dark"] code.highlight {{
 table {{ border-collapse: collapse; display: block; overflow-x: auto; max-width: 100%; }}
 th, td {{ border: 1px solid var(--table-border); padding: .4rem .65rem; }}
 th {{ background: var(--th-bg); }} .error {{ max-width: 42rem; }}
+.empty {{ color: var(--quote-color); }}
 </style></head><body><main>{body}</main></body></html>"""
 
 
