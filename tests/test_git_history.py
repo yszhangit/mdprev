@@ -96,6 +96,13 @@ def test_find_repository_returns_none_outside_a_repository(tmp_path):
     assert git_history.find_repository(loose / "doc.md") is None
 
 
+def test_find_repository_rejects_a_bare_repository(tmp_path):
+    bare = tmp_path / "bare.git"
+    pygit2.init_repository(str(bare), bare=True)
+
+    assert git_history.find_repository(bare / "doc.md") is None
+
+
 def test_relative_path_is_repo_relative_and_posix(repo_factory):
     repo, workdir = repo_factory()
     commit_file(repo, workdir, "docs/doc.md", "# Title\n", "Add doc")
@@ -119,3 +126,137 @@ def test_is_tracked_distinguishes_tracked_from_untracked(repo_factory):
 
     assert git_history.is_tracked(repo, workdir / "doc.md") is True
     assert git_history.is_tracked(repo, workdir / "scratch.md") is False
+
+
+def test_history_returns_commits_newest_first(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "one\n", "First", when=1700000000)
+    commit_file(repo, workdir, "doc.md", "two\n", "Second", when=1700000100)
+
+    result = git_history.history(repo, workdir / "doc.md")
+
+    assert [c.summary for c in result.commits] == ["Second", "First"]
+    assert result.truncated is False
+    assert result.next_cursor is None
+
+
+def test_history_records_commit_metadata(repo_factory):
+    repo, workdir = repo_factory()
+    sha = commit_file(repo, workdir, "doc.md", "one\n", "Subject line\n\nBody\n")
+
+    commit = git_history.history(repo, workdir / "doc.md").commits[0]
+
+    assert commit.sha == sha
+    assert commit.short_sha == sha[:7]
+    assert commit.summary == "Subject line"
+    assert commit.author == "Test Author"
+    assert commit.path == "doc.md"
+    assert commit.when.year == 2023
+
+
+def test_history_skips_commits_that_do_not_touch_the_file(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "one\n", "Touches doc")
+    commit_file(repo, workdir, "other.md", "x\n", "Touches other")
+
+    result = git_history.history(repo, workdir / "doc.md")
+
+    assert [c.summary for c in result.commits] == ["Touches doc"]
+
+
+def test_history_includes_the_commit_that_deletes_the_file(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "one\n", "Add doc")
+    (workdir / "doc.md").unlink()
+    repo.index.remove("doc.md")
+    repo.index.write()
+    tree = repo.index.write_tree()
+    signature = pygit2.Signature("Test Author", "test@example.com", 1700000200, 0)
+    repo.create_commit("HEAD", signature, signature, "Delete doc", tree, [repo.head.target])
+
+    result = git_history.history(repo, workdir / "doc.md")
+
+    assert [c.summary for c in result.commits] == ["Delete doc", "Add doc"]
+
+
+def test_history_is_empty_for_an_unborn_head(repo_factory):
+    repo, workdir = repo_factory()
+    (workdir / "doc.md").write_text("# Title\n", encoding="utf-8")
+
+    result = git_history.history(repo, workdir / "doc.md")
+
+    assert result.commits == []
+    assert result.next_cursor is None
+
+
+def test_history_is_empty_for_an_untracked_file(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "one\n", "Add doc")
+    (workdir / "scratch.md").write_text("# Scratch\n", encoding="utf-8")
+
+    assert git_history.history(repo, workdir / "scratch.md").commits == []
+
+
+def test_history_honors_the_limit_and_reports_a_cursor(repo_factory):
+    repo, workdir = repo_factory()
+    for index in range(5):
+        commit_file(repo, workdir, "doc.md", f"line {index}\n", f"Commit {index}",
+                    when=1700000000 + index)
+
+    result = git_history.history(repo, workdir / "doc.md", limit=2)
+
+    assert [c.summary for c in result.commits] == ["Commit 4", "Commit 3"]
+    assert result.next_cursor is not None
+    assert result.next_cursor.sha == result.commits[-1].sha
+    assert result.next_cursor.path == "doc.md"
+
+
+def test_history_resumes_after_a_cursor_without_gaps_or_repeats(repo_factory):
+    repo, workdir = repo_factory()
+    for index in range(5):
+        commit_file(repo, workdir, "doc.md", f"line {index}\n", f"Commit {index}",
+                    when=1700000000 + index)
+
+    first = git_history.history(repo, workdir / "doc.md", limit=2)
+    second = git_history.history(repo, workdir / "doc.md", limit=2, after=first.next_cursor)
+
+    assert [c.summary for c in second.commits] == ["Commit 2", "Commit 1"]
+    assert second.next_cursor is not None
+
+
+def test_history_cursor_is_none_at_the_end_of_history(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "one\n", "Only")
+
+    result = git_history.history(repo, workdir / "doc.md", limit=10)
+
+    assert result.next_cursor is None
+
+
+def test_history_truncates_at_the_scan_ceiling(repo_factory, monkeypatch):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "one\n", "Touches doc")
+    for index in range(4):
+        commit_file(repo, workdir, "other.md", f"{index}\n", f"Noise {index}")
+    monkeypatch.setattr(git_history, "MAX_SCAN", 3)
+
+    result = git_history.history(repo, workdir / "doc.md")
+
+    assert result.truncated is True
+    assert result.commits == []
+    # A truncated walk must stay resumable, or "Show more" dead-ends.
+    assert result.next_cursor is not None
+
+
+def test_history_resumes_after_a_truncated_walk(repo_factory, monkeypatch):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "one\n", "Touches doc", when=1700000000)
+    for index in range(4):
+        commit_file(repo, workdir, "other.md", f"{index}\n", f"Noise {index}",
+                    when=1700000100 + index)
+    monkeypatch.setattr(git_history, "MAX_SCAN", 3)
+
+    first = git_history.history(repo, workdir / "doc.md")
+    second = git_history.history(repo, workdir / "doc.md", after=first.next_cursor)
+
+    assert [c.summary for c in second.commits] == ["Touches doc"]

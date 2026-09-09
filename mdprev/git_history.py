@@ -12,7 +12,7 @@ point is guarded by AVAILABLE.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 try:
@@ -107,3 +107,90 @@ def is_tracked(repo, path: Path) -> bool:
     except GitHistoryError:
         return False
     return relative in repo.index
+
+
+def _entry(tree, relpath: str):
+    """Return the blob at relpath within tree, or None when absent.
+
+    Path segments are walked explicitly so that nested paths behave the same
+    way across pygit2 versions.
+    """
+
+    node = tree
+    for part in relpath.split("/"):
+        if not isinstance(node, pygit2.Tree):
+            return None
+        try:
+            node = node[part]
+        except KeyError:
+            return None
+    return node if isinstance(node, pygit2.Blob) else None
+
+
+def _commit_record(commit, path: str) -> Commit:
+    author = commit.author
+    when = datetime.fromtimestamp(
+        author.time, tz=timezone(timedelta(minutes=author.offset))
+    )
+    message = commit.message.strip()
+    summary = message.splitlines()[0] if message else ""
+    sha = str(commit.id)
+    return Commit(
+        sha=sha,
+        short_sha=sha[:7],
+        summary=summary,
+        author=author.name,
+        when=when,
+        path=path,
+    )
+
+
+def history(repo, path: Path, limit: int = 10, after: Cursor | None = None) -> History:
+    """Return commits touching path, newest first.
+
+    A commit touches the file when the blob recorded at the tracked path
+    differs from the one recorded in its first parent.  Merge commits are
+    compared against their first parent only, matching git log --follow.
+    """
+
+    if repo.head_is_unborn:
+        return History(commits=[], truncated=False, next_cursor=None)
+    tracked = after.path if after is not None else _relative_path(repo, path)
+    skipping = after.sha if after is not None else None
+
+    commits: list[Commit] = []
+    scanned = 0
+    truncated = False
+    next_cursor: Cursor | None = None
+    last_seen: str | None = None
+
+    for commit in repo.walk(repo.head.target, SortMode.TOPOLOGICAL | SortMode.TIME):
+        if skipping is not None:
+            # Revisions above the cursor were reported by an earlier call.
+            if str(commit.id) == skipping:
+                skipping = None
+            continue
+        if scanned >= MAX_SCAN:
+            # Resume below the last revision actually examined, so that the
+            # revision which tripped the ceiling is not skipped.
+            truncated = True
+            if last_seen is not None:
+                next_cursor = Cursor(sha=last_seen, path=tracked)
+            break
+        scanned += 1
+        last_seen = str(commit.id)
+
+        entry = _entry(commit.tree, tracked)
+        parent = commit.parents[0] if commit.parents else None
+        parent_entry = _entry(parent.tree, tracked) if parent is not None else None
+        current_id = str(entry.id) if entry is not None else None
+        parent_id = str(parent_entry.id) if parent_entry is not None else None
+        if current_id == parent_id:
+            continue
+
+        commits.append(_commit_record(commit, tracked))
+        if len(commits) >= limit:
+            next_cursor = Cursor(sha=str(commit.id), path=tracked)
+            break
+
+    return History(commits=commits, truncated=truncated, next_cursor=next_cursor)
