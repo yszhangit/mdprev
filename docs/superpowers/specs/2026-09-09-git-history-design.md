@@ -113,18 +113,32 @@ class Commit:
     path: str         # the file's repo-relative path AS OF this commit
 
 @dataclass(frozen=True)
+class Cursor:
+    sha: str    # resume below this revision
+    path: str   # the tracked path as of that revision
+
+@dataclass(frozen=True)
 class History:
     commits: list[Commit]
-    truncated: bool          # the walk hit MAX_SCAN before filling `limit`
-    next_cursor: str | None  # sha to resume from, for "Show more"
+    truncated: bool             # the walk hit MAX_SCAN before filling `limit`
+    next_cursor: Cursor | None  # where to resume, for "Show more"
 
 def find_repository(path: Path) -> Repository | None
-def history(repo, path: Path, limit: int = 10, after: str | None = None) -> History
+def is_tracked(repo, path: Path) -> bool
+def history(repo, path: Path, limit: int = 10, after: Cursor | None = None) -> History
 def file_at(repo, sha: str, path: str) -> str
 def patch_for(repo, sha: str, path: str) -> str
 def working_patch(repo, path: Path) -> str
 def is_modified(repo, path: Path) -> bool
 ```
+
+A resumed walk continues below a rename, where older revisions carry the file
+under a different name, so the cursor records the tracked path alongside the
+sha. A bare sha would lose that and silently truncate history at the rename.
+
+`is_tracked()` exists so that §7.5 can distinguish "Not tracked in this
+repository" from "No history for this file"; nothing else in this interface
+separates those two states.
 
 Two path types appear deliberately. `find_repository()`, `history()`,
 `working_patch()`, and `is_modified()` take the document's on-disk `Path` and
@@ -145,7 +159,8 @@ work rather than by clock, which is deterministic and testable:
 - set `truncated=True` when the ceiling stopped the walk, so the sidebar
   reports the truncation rather than silently showing a short list.
 
-`after` is **exclusive**: the walk resumes at the revision following that sha.
+`after` is **exclusive**: the walk resumes at the revision following
+`Cursor.sha`, tracking `Cursor.path`.
 `next_cursor` is set whenever the walk stopped with history potentially
 remaining — whether `limit` was filled or `MAX_SCAN` intervened — so "Show
 more" resumes correctly in both cases. It is `None` only when the walk reached
@@ -235,8 +250,11 @@ child and the webview as end child:
 The sidebar lives in `mdprev/sidebar.py` rather than in `app.py`. `app.py` is
 already 379 lines, and the list, its rows, the view toggle, and the empty
 states would push the window class past readability. `HistorySidebar(Gtk.Box)`
-owns the list and the toggle and accepts a plain `on_select(sha | None, mode)`
-callback — no custom GObject signals. The window reacts to the callback and
+owns the list and the toggle and accepts a plain
+`on_select(commit: Commit | None, mode: str)` callback — no custom GObject
+signals. The record travels rather than a bare sha because rendering the
+revision needs `Commit.path`, the name in force at that commit, and the
+header-bar subtitle needs `Commit.when`. The window reacts to the callback and
 does not reach into the widget's internals.
 
 ### 7.2 The commit list
