@@ -145,12 +145,17 @@ def _commit_record(commit, path: str) -> Commit:
     )
 
 
-def _rename_source(repo, parent, commit, tracked: str) -> str | None:
-    """Return the file's previous name when this commit renamed it.
+def _rename_patch(repo, parent, commit, tracked: str) -> pygit2.Patch | None:
+    """Return the Patch that renamed tracked into commit, or None.
 
     Only called when the path exists in the commit and is absent from the
     parent, because computing a rename-detecting diff is far more expensive
-    than the tree lookups that drive the walk.
+    than the tree lookups that drive the walk. Returning the Patch itself
+    (rather than just the old path) lets callers reuse its rendered text: a
+    rename with unchanged content has identical old and new blobs, and a
+    patch built directly from those two blobs would come back empty, losing
+    the "renamed from" header that only a whole-diff rename detection can
+    produce.
     """
 
     diff = repo.diff(parent.tree, commit.tree)
@@ -158,8 +163,15 @@ def _rename_source(repo, parent, commit, tracked: str) -> str | None:
     for patch in diff:
         delta = patch.delta
         if delta.new_file.path == tracked and delta.status == DeltaStatus.RENAMED:
-            return delta.old_file.path
+            return patch
     return None
+
+
+def _rename_source(repo, parent, commit, tracked: str) -> str | None:
+    """Return the file's previous name when this commit renamed it."""
+
+    patch = _rename_patch(repo, parent, commit, tracked)
+    return patch.delta.old_file.path if patch is not None else None
 
 
 def history(repo, path: Path, limit: int = 10, after: Cursor | None = None) -> History:
@@ -250,3 +262,55 @@ def file_at(repo, sha: str, path: str) -> str:
         raise GitHistoryError(
             f"Unable to read {path} at {sha[:7]}: the file is not valid UTF-8"
         ) from exc
+
+
+def patch_for(repo, sha: str, path: str) -> str:
+    """Return the unified diff of path at sha against its first parent."""
+
+    commit = _lookup_commit(repo, sha)
+    new_blob = _entry(commit.tree, path)
+    parent = commit.parents[0] if commit.parents else None
+    old_blob = None
+    if parent is not None:
+        old_blob = _entry(parent.tree, path)
+        if new_blob is not None and old_blob is None:
+            renamed = _rename_patch(repo, parent, commit, path)
+            if renamed is not None:
+                # A content-preserving rename has identical old and new
+                # blobs; a patch built from those two blobs would come back
+                # empty and lose the "renamed from" header, so the whole-diff
+                # rename detection's own patch is returned directly instead.
+                return renamed.text or ""
+    if old_blob is None and new_blob is None:
+        return ""
+    patch = pygit2.Patch.create_from(
+        old_blob,
+        new_blob,
+        old_as_path=path,
+        new_as_path=path,
+    )
+    return patch.text or ""
+
+
+def working_patch(repo, path: Path) -> str:
+    """Return the unified diff of the file on disk against HEAD."""
+
+    relative = _relative_path(repo, path)
+    old_blob = None
+    if not repo.head_is_unborn:
+        old_blob = _entry(repo[repo.head.target].tree, relative)
+    try:
+        new_data = Path(path).read_bytes()
+    except OSError as exc:
+        raise GitHistoryError(
+            f"Unable to read {Path(path).name}: {exc.strerror or exc}"
+        ) from exc
+    if old_blob is None and not new_data:
+        return ""
+    patch = pygit2.Patch.create_from(
+        old_blob,
+        new_data,
+        old_as_path=relative,
+        new_as_path=relative,
+    )
+    return patch.text or ""

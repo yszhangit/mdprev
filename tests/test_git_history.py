@@ -366,3 +366,82 @@ def test_file_at_rejects_content_that_is_not_utf8(repo_factory):
 
     with pytest.raises(git_history.GitHistoryError):
         git_history.file_at(repo, sha, "doc.md")
+
+
+def test_patch_for_shows_added_and_removed_lines(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "one\n", "First", when=1700000000)
+    second = commit_file(repo, workdir, "doc.md", "two\n", "Second", when=1700000100)
+
+    patch = git_history.patch_for(repo, second, "doc.md")
+
+    assert "@@" in patch
+    assert "-one" in patch
+    assert "+two" in patch
+
+
+def test_patch_for_a_root_commit_shows_the_whole_file_as_added(repo_factory):
+    repo, workdir = repo_factory()
+    first = commit_file(repo, workdir, "doc.md", "one\ntwo\n", "First")
+
+    patch = git_history.patch_for(repo, first, "doc.md")
+
+    assert "+one" in patch
+    assert "+two" in patch
+    assert "-one" not in patch
+
+
+def test_patch_for_a_rename_diffs_against_the_old_name(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "old.md", "shared content\n" * 20, "Add old",
+                when=1700000000)
+    rename_sha = rename_file(repo, workdir, "old.md", "new.md", "Rename", when=1700000100)
+
+    patch = git_history.patch_for(repo, rename_sha, "new.md")
+
+    assert "old.md" in patch
+
+
+def test_patch_for_a_merge_uses_the_first_parent(repo_factory):
+    repo, workdir = repo_factory()
+    base = commit_file(repo, workdir, "doc.md", "base\n", "Base", when=1700000000)
+    repo.branches.local.create("side", repo[base])
+    commit_file(repo, workdir, "doc.md", "main\n", "Main edit", when=1700000100)
+    main_tip = repo.head.target
+    side_tip = repo.branches.local["side"].target
+    signature = pygit2.Signature("Test Author", "test@example.com", 1700000200, 0)
+    merge_sha = str(repo.create_commit(
+        "HEAD", signature, signature, "Merge", repo[main_tip].tree_id,
+        [main_tip, side_tip],
+    ))
+
+    patch = git_history.patch_for(repo, merge_sha, "doc.md")
+
+    assert patch == ""
+
+
+def test_working_patch_shows_uncommitted_changes(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "committed\n", "First")
+    (workdir / "doc.md").write_text("edited\n", encoding="utf-8")
+
+    patch = git_history.working_patch(repo, workdir / "doc.md")
+
+    assert "-committed" in patch
+    assert "+edited" in patch
+
+
+def test_working_patch_is_empty_for_a_clean_file(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "committed\n", "First")
+
+    assert git_history.working_patch(repo, workdir / "doc.md") == ""
+
+
+def test_working_patch_reports_an_unreadable_file(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "committed\n", "First")
+    (workdir / "doc.md").unlink()
+
+    with pytest.raises(git_history.GitHistoryError):
+        git_history.working_patch(repo, workdir / "doc.md")
