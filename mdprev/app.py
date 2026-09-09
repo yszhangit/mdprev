@@ -11,7 +11,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("WebKit", "6.0")
 from gi.repository import Gio, GLib, Gtk, WebKit  # noqa: E402
 
-from .preferences import load_preferences, save_preferences
+from .preferences import load_preferences, save_preferences  # noqa: E402
 from .render import RenderError, error_document, read_source, render_markdown  # noqa: E402
 
 

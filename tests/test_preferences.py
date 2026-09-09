@@ -1,8 +1,6 @@
 import json
 from pathlib import Path
 
-import pytest
-
 from mdprev.preferences import (
     DEFAULT_FONT,
     DEFAULT_THEME,
