@@ -3,6 +3,9 @@ from pathlib import Path
 
 from mdprev.preferences import (
     DEFAULT_FONT,
+    DEFAULT_HISTORY_LIMIT,
+    DEFAULT_SIDEBAR_VISIBLE,
+    DEFAULT_SIDEBAR_WIDTH,
     DEFAULT_THEME,
     DEFAULT_WINDOW_HEIGHT,
     DEFAULT_WINDOW_WIDTH,
@@ -113,3 +116,56 @@ def test_ignore_invalid_save_values(monkeypatch, tmp_path: Path):
     assert prefs["font"] == "serif"
     assert prefs["theme"] == "sepia"
     assert prefs["zoom_level"] == 1.2
+
+
+def test_defaults_include_sidebar_and_history_keys(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+
+    prefs = load_preferences()
+
+    assert prefs["sidebar_visible"] is DEFAULT_SIDEBAR_VISIBLE
+    assert prefs["sidebar_width"] == DEFAULT_SIDEBAR_WIDTH
+    assert prefs["history_limit"] == DEFAULT_HISTORY_LIMIT
+
+
+def test_sidebar_and_history_values_round_trip(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+
+    save_preferences(sidebar_visible=True, sidebar_width=340, history_limit=25)
+    prefs = load_preferences()
+
+    assert prefs["sidebar_visible"] is True
+    assert prefs["sidebar_width"] == 340
+    assert prefs["history_limit"] == 25
+
+
+def test_out_of_range_sidebar_width_is_rejected(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+
+    save_preferences(sidebar_width=10_000)
+
+    assert load_preferences()["sidebar_width"] == DEFAULT_SIDEBAR_WIDTH
+
+
+def test_out_of_range_history_limit_is_rejected(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+
+    save_preferences(history_limit=0)
+
+    assert load_preferences()["history_limit"] == DEFAULT_HISTORY_LIMIT
+
+
+def test_wrongly_typed_sidebar_values_fall_back_to_defaults(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    config = tmp_path / "mdprev" / "preferences.json"
+    config.parent.mkdir(parents=True)
+    config.write_text(
+        '{"sidebar_visible": "yes", "sidebar_width": "wide", "history_limit": 1.5}',
+        encoding="utf-8",
+    )
+
+    prefs = load_preferences()
+
+    assert prefs["sidebar_visible"] is DEFAULT_SIDEBAR_VISIBLE
+    assert prefs["sidebar_width"] == DEFAULT_SIDEBAR_WIDTH
+    assert prefs["history_limit"] == DEFAULT_HISTORY_LIMIT
