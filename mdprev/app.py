@@ -326,6 +326,14 @@ class PreviewWindow(Gtk.ApplicationWindow):
     def _reload_timeout(self) -> bool:
         self._reload_source = 0
         self._monitor_path()  # reconnect after atomic replacement
+        # Saving changes whether the file differs from HEAD, so the
+        # working-copy row's status dot is refreshed either way.
+        if self._sidebar_visible:
+            self._sidebar.refresh_status()
+        if self._revision_commit is not None:
+            # A historic revision is on screen.  Saving the file must not swap
+            # it out; only the working-copy row's status may change.
+            return GLib.SOURCE_REMOVE
         # WebKit's page JavaScript remains disabled.  Code explicitly evaluated
         # by the host application lets us preserve the reading position.  The
         # setting is enabled only around this trusted expression; rendered HTML
