@@ -109,7 +109,7 @@ def is_tracked(repo, path: Path) -> bool:
     return relative in repo.index
 
 
-def _entry(tree, relpath: str) -> "pygit2.Blob | None":
+def _entry(tree, relpath: str) -> pygit2.Blob | None:
     """Return the blob at relpath within tree, or None when absent.
 
     Path segments are walked explicitly so that nested paths behave the same
@@ -223,3 +223,30 @@ def history(repo, path: Path, limit: int = 10, after: Cursor | None = None) -> H
             break
 
     return History(commits=commits, truncated=truncated, next_cursor=next_cursor)
+
+
+def _lookup_commit(repo, sha: str):
+    try:
+        commit = repo.revparse_single(sha)
+    except (KeyError, ValueError, pygit2.GitError) as exc:
+        raise GitHistoryError(f"Unknown revision {sha[:7]}") from exc
+    if not isinstance(commit, pygit2.Commit):
+        raise GitHistoryError(f"{sha[:7]} is not a commit")
+    return commit
+
+
+def file_at(repo, sha: str, path: str) -> str:
+    """Return the UTF-8 text of path as recorded at sha."""
+
+    commit = _lookup_commit(repo, sha)
+    blob = _entry(commit.tree, path)
+    if blob is None:
+        raise GitHistoryError(f"{path} does not exist at {sha[:7]}")
+    if blob.is_binary:
+        raise GitHistoryError(f"Unable to read {path} at {sha[:7]}: the file is binary")
+    try:
+        return blob.data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise GitHistoryError(
+            f"Unable to read {path} at {sha[:7]}: the file is not valid UTF-8"
+        ) from exc

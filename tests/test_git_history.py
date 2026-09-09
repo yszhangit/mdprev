@@ -323,3 +323,46 @@ def test_history_follows_a_nested_path(repo_factory):
 
     assert [c.summary for c in result.commits] == ["Second", "First"]
     assert result.commits[0].path == "docs/guide/doc.md"
+
+
+def test_file_at_returns_the_content_of_that_revision(repo_factory):
+    repo, workdir = repo_factory()
+    first = commit_file(repo, workdir, "doc.md", "# One\n", "First", when=1700000000)
+    commit_file(repo, workdir, "doc.md", "# Two\n", "Second", when=1700000100)
+
+    assert git_history.file_at(repo, first, "doc.md") == "# One\n"
+
+
+def test_file_at_reads_under_the_historic_name(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "old.md", "shared content\n" * 20, "Add old",
+                when=1700000000)
+    rename_file(repo, workdir, "old.md", "new.md", "Rename to new", when=1700000100)
+
+    oldest = git_history.history(repo, workdir / "new.md").commits[-1]
+
+    assert git_history.file_at(repo, oldest.sha, oldest.path).startswith("shared content")
+
+
+def test_file_at_rejects_a_revision_that_lacks_the_file(repo_factory):
+    repo, workdir = repo_factory()
+    sha = commit_file(repo, workdir, "doc.md", "# One\n", "First")
+
+    with pytest.raises(git_history.GitHistoryError):
+        git_history.file_at(repo, sha, "absent.md")
+
+
+def test_file_at_rejects_an_unparseable_revision(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "# One\n", "First")
+
+    with pytest.raises(git_history.GitHistoryError):
+        git_history.file_at(repo, "not-a-sha", "doc.md")
+
+
+def test_file_at_rejects_content_that_is_not_utf8(repo_factory):
+    repo, workdir = repo_factory()
+    sha = commit_file(repo, workdir, "doc.md", b"\xff\xfe invalid\n", "Binary")
+
+    with pytest.raises(git_history.GitHistoryError):
+        git_history.file_at(repo, sha, "doc.md")
