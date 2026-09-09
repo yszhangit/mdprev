@@ -22,6 +22,8 @@ The planned runtime stack is:
 - `cmark-gfm` for CommonMark and GitHub Flavored Markdown rendering
 - `Gio.FileMonitor` for filesystem change notifications
 - Pygments in MVP 2 only
+- `pygit2` in MVP 4 only, and optional even there: it powers the git history
+  sidebar, and MdPrev runs without it exactly as it did before MVP 4
 
 Expected MVP 1 Ubuntu packages:
 

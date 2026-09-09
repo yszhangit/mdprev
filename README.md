@@ -54,7 +54,10 @@ uncommitted changes and a green dot when it matches HEAD. Selecting a commit
 shows that version of the document; the Rendered/Diff switch alternates between
 the formatted document and the unified diff of its Markdown source. Renames are
 followed. Live reload pauses while a historic revision is shown and resumes on
-returning to the working copy.
+returning to the working copy. `Escape` returns to the working copy at any
+time a commit is selected, whether or not the sidebar is open — this is the
+only way back once the sidebar is closed, so it is worth knowing even though
+there is no menu item or button for it.
 
 Two limitations are worth knowing. The commit list refreshes when the sidebar is
 opened, so a commit created elsewhere while the window is open appears the next

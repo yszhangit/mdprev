@@ -151,13 +151,40 @@ No function in this module writes to the repository or to the filesystem.
 
 ### 5.2 Bounding the walk
 
-Running in-process forfeits `subprocess.run(timeout=)`. The walk is bounded by
-work rather than by clock, which is deterministic and testable:
+Running in-process forfeits `subprocess.run(timeout=)`. The number of
+revisions *compared* is bounded by work rather than by clock, which is
+deterministic and testable:
 
 - collect at most `limit` matching commits (default 10, from preferences);
 - stop unconditionally after scanning `MAX_SCAN = 2000` revisions;
 - set `truncated=True` when the ceiling stopped the walk, so the sidebar
   reports the truncation rather than silently showing a short list.
+
+This ceiling does **not** bound wall-clock time, and a future maintainer
+should not treat it as if it did. `repo.walk()` is used with
+`SortMode.TOPOLOGICAL | SortMode.TIME`, and libgit2 builds that ordering by
+traversing the *entire* reachable commit graph before yielding the first
+commit — cost that `MAX_SCAN` cannot cap, because it is paid before the walk
+loop (and therefore the scan-count check) ever runs. Measured scanning only
+2000 revisions regardless of sort mode:
+
+| total commits in history | `TOPOLOGICAL\|TIME` (what we use) | `TIME` | `NONE` |
+|---|---|---|---|
+| 20,000 | 0.15 s | — | — |
+| 100,000 | 0.74 s | 0.73 s | 0.02 s |
+
+So every sidebar open and every "Show more" pays a setup cost linear in total
+reachable history, synchronously on the GTK main loop, before `MAX_SCAN` has
+any effect at all. `SortMode.NONE` is not a fix: it returns commits in
+whatever order the on-disk pack happens to store them, which is not
+newest-first and would break the sidebar's ordering guarantee. `SortMode.TIME`
+alone was measured and buys nothing over the combined
+`TOPOLOGICAL | TIME` mode used here (0.73 s vs. 0.74 s at 100,000 commits) —
+the graph traversal, not the sort key, is what costs time. The sort mode is
+therefore deliberately left as `TOPOLOGICAL | TIME`. A very large repository
+(hundreds of thousands of reachable commits) should expect every sidebar open
+and "Show more" to cost on the order of a second before this trade-off is
+revisited.
 
 `after` is **exclusive**: the walk resumes at the revision following
 `Cursor.sha`, tracking `Cursor.path`.
@@ -324,10 +351,17 @@ another `history_limit` batch. Paging is session-only and is not persisted.
   because restoring an offset into a different document is meaningless.
 - **Font and theme changes** while a commit is selected re-render *that
   commit*. `refresh_document()` becomes revision-aware.
-- The commit list is re-queried when the sidebar is opened and on debounced
-  file-change events. The `.git` directory is **not** watched: a commit created
-  externally appears the next time the sidebar is opened. This is an accepted
-  limitation and is documented in the README.
+- The commit list is re-queried only when the sidebar is opened, not on
+  debounced file-change events. A save re-runs `is_modified()` to refresh the
+  working-copy row's status dot (cheap: one `status_file()` call), but does
+  not re-run `history()` (a walk, bounded per §5.2 in commits but not in wall
+  time). Paying the walk cost on every save — potentially several times a
+  minute while editing — would make typing-and-saving noticeably janky on a
+  large repository for a refresh that is very rarely useful: the file's own
+  history essentially never changes from an edit to the same file arriving
+  seconds later. The `.git` directory is **not** watched either: a commit
+  created externally appears the next time the sidebar is opened. Both are
+  accepted limitations and are documented in the README.
 
 ### 7.5 Empty and error states
 
