@@ -191,52 +191,55 @@ def history(repo, path: Path, limit: int = 10, after: Cursor | None = None) -> H
     git log --follow.
     """
 
-    if repo.head_is_unborn:
-        return History(commits=[], truncated=False, next_cursor=None)
-    tracked = after.path if after is not None else _relative_path(repo, path)
-    skipping = after.sha if after is not None else None
+    try:
+        if repo.head_is_unborn:
+            return History(commits=[], truncated=False, next_cursor=None)
+        tracked = after.path if after is not None else _relative_path(repo, path)
+        skipping = after.sha if after is not None else None
 
-    commits: list[Commit] = []
-    scanned = 0
-    truncated = False
-    next_cursor: Cursor | None = None
-    last_seen: str | None = None
+        commits: list[Commit] = []
+        scanned = 0
+        truncated = False
+        next_cursor: Cursor | None = None
+        last_seen: str | None = None
 
-    for commit in repo.walk(repo.head.target, SortMode.TOPOLOGICAL | SortMode.TIME):
-        if skipping is not None:
-            # Revisions above the cursor were reported by an earlier call.
-            if str(commit.id) == skipping:
-                skipping = None
-            continue
-        if scanned >= MAX_SCAN:
-            # Resume below the last revision actually examined, so that the
-            # revision which tripped the ceiling is not skipped.
-            truncated = True
-            if last_seen is not None:
-                next_cursor = Cursor(sha=last_seen, path=tracked)
-            break
-        scanned += 1
-        last_seen = str(commit.id)
+        for commit in repo.walk(repo.head.target, SortMode.TOPOLOGICAL | SortMode.TIME):
+            if skipping is not None:
+                # Revisions above the cursor were reported by an earlier call.
+                if str(commit.id) == skipping:
+                    skipping = None
+                continue
+            if scanned >= MAX_SCAN:
+                # Resume below the last revision actually examined, so that the
+                # revision which tripped the ceiling is not skipped.
+                truncated = True
+                if last_seen is not None:
+                    next_cursor = Cursor(sha=last_seen, path=tracked)
+                break
+            scanned += 1
+            last_seen = str(commit.id)
 
-        entry = _entry(commit.tree, tracked)
-        parent = commit.parents[0] if commit.parents else None
-        parent_entry = _entry(parent.tree, tracked) if parent is not None else None
-        current_id = str(entry.id) if entry is not None else None
-        parent_id = str(parent_entry.id) if parent_entry is not None else None
-        if current_id == parent_id:
-            continue
+            entry = _entry(commit.tree, tracked)
+            parent = commit.parents[0] if commit.parents else None
+            parent_entry = _entry(parent.tree, tracked) if parent is not None else None
+            current_id = str(entry.id) if entry is not None else None
+            parent_id = str(parent_entry.id) if parent_entry is not None else None
+            if current_id == parent_id:
+                continue
 
-        renamed_from = None
-        if entry is not None and parent_entry is None and parent is not None:
-            renamed_from = _rename_source(repo, parent, commit, tracked)
+            renamed_from = None
+            if entry is not None and parent_entry is None and parent is not None:
+                renamed_from = _rename_source(repo, parent, commit, tracked)
 
-        commits.append(_commit_record(commit, tracked))
-        if renamed_from is not None:
-            # Older revisions carry the file under its previous name.
-            tracked = renamed_from
-        if len(commits) >= limit:
-            next_cursor = Cursor(sha=str(commit.id), path=tracked)
-            break
+            commits.append(_commit_record(commit, tracked))
+            if renamed_from is not None:
+                # Older revisions carry the file under its previous name.
+                tracked = renamed_from
+            if len(commits) >= limit:
+                next_cursor = Cursor(sha=str(commit.id), path=tracked)
+                break
+    except (pygit2.GitError, KeyError, OSError) as exc:
+        raise GitHistoryError(f"Unable to read history for {path.name}") from exc
 
     return History(commits=commits, truncated=truncated, next_cursor=next_cursor)
 
@@ -255,7 +258,10 @@ def file_at(repo, sha: str, path: str) -> str:
     """Return the UTF-8 text of path as recorded at sha."""
 
     commit = _lookup_commit(repo, sha)
-    blob = _entry(commit.tree, path)
+    try:
+        blob = _entry(commit.tree, path)
+    except (pygit2.GitError, KeyError, OSError) as exc:
+        raise GitHistoryError(f"Unable to read {path} at {sha[:7]}") from exc
     if blob is None:
         raise GitHistoryError(f"{path} does not exist at {sha[:7]}")
     if blob.is_binary:
@@ -272,28 +278,31 @@ def patch_for(repo, sha: str, path: str) -> str:
     """Return the unified diff of path at sha against its first parent."""
 
     commit = _lookup_commit(repo, sha)
-    new_blob = _entry(commit.tree, path)
-    parent = commit.parents[0] if commit.parents else None
-    old_blob = None
-    if parent is not None:
-        old_blob = _entry(parent.tree, path)
-        if new_blob is not None and old_blob is None:
-            renamed = _rename_patch(repo, parent, commit, path)
-            if renamed is not None:
-                # A content-preserving rename has identical old and new
-                # blobs; a patch built from those two blobs would come back
-                # empty and lose the "renamed from" header, so the whole-diff
-                # rename detection's own patch is returned directly instead.
-                return renamed.text or ""
-    if old_blob is None and new_blob is None:
-        return ""
-    patch = pygit2.Patch.create_from(
-        old_blob,
-        new_blob,
-        old_as_path=path,
-        new_as_path=path,
-    )
-    return patch.text or ""
+    try:
+        new_blob = _entry(commit.tree, path)
+        parent = commit.parents[0] if commit.parents else None
+        old_blob = None
+        if parent is not None:
+            old_blob = _entry(parent.tree, path)
+            if new_blob is not None and old_blob is None:
+                renamed = _rename_patch(repo, parent, commit, path)
+                if renamed is not None:
+                    # A content-preserving rename has identical old and new
+                    # blobs; a patch built from those two blobs would come back
+                    # empty and lose the "renamed from" header, so the whole-diff
+                    # rename detection's own patch is returned directly instead.
+                    return renamed.text or ""
+        if old_blob is None and new_blob is None:
+            return ""
+        patch = pygit2.Patch.create_from(
+            old_blob,
+            new_blob,
+            old_as_path=path,
+            new_as_path=path,
+        )
+        return patch.text or ""
+    except (pygit2.GitError, KeyError, OSError) as exc:
+        raise GitHistoryError(f"Unable to read {path} at {sha[:7]}") from exc
 
 
 def working_patch(repo, path: Path) -> str:
@@ -306,9 +315,12 @@ def working_patch(repo, path: Path) -> str:
     """
 
     relative = _relative_path(repo, path)
-    old_blob = None
-    if not repo.head_is_unborn:
-        old_blob = _entry(repo[repo.head.target].tree, relative)
+    try:
+        old_blob = None
+        if not repo.head_is_unborn:
+            old_blob = _entry(repo[repo.head.target].tree, relative)
+    except (pygit2.GitError, KeyError) as exc:
+        raise GitHistoryError(f"Unable to read history for {Path(path).name}") from exc
     try:
         new_data = Path(path).read_bytes()
     except OSError as exc:
@@ -317,12 +329,15 @@ def working_patch(repo, path: Path) -> str:
         ) from exc
     if old_blob is None and not new_data:
         return ""
-    patch = pygit2.Patch.create_from(
-        old_blob,
-        new_data,
-        old_as_path=relative,
-        new_as_path=relative,
-    )
+    try:
+        patch = pygit2.Patch.create_from(
+            old_blob,
+            new_data,
+            old_as_path=relative,
+            new_as_path=relative,
+        )
+    except (pygit2.GitError, KeyError, OSError) as exc:
+        raise GitHistoryError(f"Unable to diff {Path(path).name}") from exc
     return patch.text or ""
 
 
@@ -330,7 +345,10 @@ def is_modified(repo, path: Path) -> bool:
     """Report whether the file differs from HEAD, staged or unstaged.
 
     Local status only: no remote, upstream, or ahead/behind information is
-    consulted.
+    consulted. An untracked file is reported as unmodified: it has no HEAD
+    revision to differ from, and the sidebar already reports "untracked"
+    separately (via is_tracked()), so a red "Modified" dot on top of that
+    message would be contradictory rather than informative.
     """
 
     try:
@@ -342,5 +360,7 @@ def is_modified(repo, path: Path) -> bool:
     except KeyError:
         return False
     if status & FileStatus.IGNORED:
+        return False
+    if status == FileStatus.WT_NEW:
         return False
     return status != FileStatus.CURRENT

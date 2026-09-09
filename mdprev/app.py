@@ -8,8 +8,9 @@ from urllib.parse import unquote, urlparse
 
 import gi
 gi.require_version("Gtk", "4.0")
+gi.require_version("Pango", "1.0")
 gi.require_version("WebKit", "6.0")
-from gi.repository import Gio, GLib, Gtk, WebKit  # noqa: E402
+from gi.repository import Gio, GLib, Gtk, Pango, WebKit  # noqa: E402
 
 from . import git_history  # noqa: E402
 from .preferences import load_preferences, save_preferences  # noqa: E402
@@ -77,9 +78,15 @@ class PreviewWindow(Gtk.ApplicationWindow):
         title_box.set_valign(Gtk.Align.CENTER)
         self._title_label = Gtk.Label(label=self.path.name)
         self._title_label.add_css_class("title")
+        self._title_label.set_ellipsize(Pango.EllipsizeMode.END)
+        self._title_label.set_single_line_mode(True)
+        self._title_label.set_max_width_chars(40)
         self._subtitle_label = Gtk.Label(label="")
         self._subtitle_label.add_css_class("subtitle")
         self._subtitle_label.set_visible(False)
+        self._subtitle_label.set_ellipsize(Pango.EllipsizeMode.END)
+        self._subtitle_label.set_single_line_mode(True)
+        self._subtitle_label.set_max_width_chars(40)
         title_box.append(self._title_label)
         title_box.append(self._subtitle_label)
         header_bar.set_title_widget(title_box)
@@ -366,7 +373,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
         self._title_label.set_text(self.path.name)
         self._update_titles()
         try:
-            if self._mode == "diff":
+            if self._mode == "diff" and self._repo is not None:
                 if self._revision_commit is None:
                     patch = git_history.working_patch(self._repo, self.path)
                 else:

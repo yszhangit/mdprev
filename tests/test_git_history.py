@@ -1,6 +1,7 @@
 """Repository history queries, tested against real temporary repositories."""
 
 import dataclasses
+import shutil
 from pathlib import Path
 
 import pytest
@@ -504,9 +505,40 @@ def test_is_modified_is_true_for_a_staged_but_uncommitted_edit(repo_factory):
     assert git_history.is_modified(repo, workdir / "doc.md") is True
 
 
+def test_is_modified_is_false_for_an_untracked_file(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "committed\n", "First")
+    (workdir / "scratch.md").write_text("# Scratch\n", encoding="utf-8")
+
+    assert git_history.is_modified(repo, workdir / "scratch.md") is False
+
+
 def test_is_modified_is_false_for_a_path_outside_the_repository(repo_factory, tmp_path):
     repo, _workdir = repo_factory()
     outside = tmp_path / "elsewhere.md"
     outside.write_text("# Title\n", encoding="utf-8")
 
     assert git_history.is_modified(repo, outside) is False
+
+
+def test_expected_libgit2_failures_convert_to_git_history_error(repo_factory):
+    """A repository that vanishes mid-session must not leak raw libgit2
+    errors (GitError/KeyError) out of these four entry points. Design §5.5
+    promises GitHistoryError from every one of them; both consumers
+    (sidebar._fetch, app.load_document) catch only that type. A fresh
+    Repository handle is opened before deletion so libgit2's in-process
+    object cache from the writes above cannot mask the failure.
+    """
+    repo, workdir = repo_factory()
+    sha = commit_file(repo, workdir, "doc.md", "one\n", "First")
+    fresh = pygit2.Repository(str(workdir))
+    shutil.rmtree(workdir)
+
+    with pytest.raises(git_history.GitHistoryError):
+        git_history.history(fresh, workdir / "doc.md")
+    with pytest.raises(git_history.GitHistoryError):
+        git_history.file_at(fresh, sha, "doc.md")
+    with pytest.raises(git_history.GitHistoryError):
+        git_history.patch_for(fresh, sha, "doc.md")
+    with pytest.raises(git_history.GitHistoryError):
+        git_history.working_patch(fresh, workdir / "doc.md")
