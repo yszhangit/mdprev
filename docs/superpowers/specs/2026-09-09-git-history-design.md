@@ -28,6 +28,29 @@ historic content included.
 - No side-by-side diff.
 - No historic image resolution (see §8.2).
 - No `.git` directory watching (see §7.4).
+- **No per-file preferences.** All settings remain global, as they are today.
+
+  The state worth remembering per document would be the selected revision, and
+  restoring it is unsafe here: a window would open showing content from an old
+  commit while the reader believes it shows the file, with live reload
+  suppressed (§7.4) and only the header-bar SHA to contradict them. A stored
+  sha is unstable besides — rebase, amend, gc, or a fresh clone invalidate it,
+  and the only sensible fallback is the working copy, which is the default
+  anyway. Every document therefore opens at the working copy.
+
+  The remaining candidates do not justify a per-file store. Sidebar visibility
+  is a mode the reader is in rather than a property of a document; width is
+  layout; the Rendered/Diff mode is flipped constantly while comparing commits.
+  A path-keyed store would also grow without bound, requiring an eviction
+  policy, and would amount to the recent-file management that
+  `FEATURE_REQUIREMENTS.md` defers. `save_preferences()` is additionally a
+  read-modify-write over the whole file, so per-file entries would make
+  concurrent window closes race where today they write identical values.
+
+  Revisit only if tabs or session restoration are adopted: those bring a
+  document registry with a lifecycle and an eviction story, which makes
+  per-file state nearly free, and the revision question can then be reopened
+  with an explicit "viewing history" banner rather than a subtitle.
 
 ## 3. Runtime dependency
 
