@@ -4,6 +4,7 @@ import re
 
 import pytest
 
+from mdprev import render
 from mdprev.render import RenderError, error_document, read_source, render_markdown, sanitize_fragment
 
 
@@ -152,3 +153,48 @@ def test_theme_selection():
     html_invalid = render_markdown("# Title\n\nText", theme="nonexistent")
     assert 'data-theme="system"' in html_invalid
 
+
+def test_render_diff_marks_the_diff_language():
+    html = render.render_diff("@@ -1 +1 @@\n-old\n+new\n")
+
+    assert 'class="highlight language-diff"' in html
+
+
+def test_render_diff_escapes_html_in_patch_text():
+    html = render.render_diff("@@ -1 +1 @@\n-<script>alert(1)</script>\n+safe\n")
+
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
+
+
+def test_render_diff_preserves_the_patch_text_exactly():
+    patch = "@@ -1,2 +1,2 @@\n-one & two\n+one < two\n"
+
+    html = render.render_diff(patch)
+    stripped = unescape(re.sub(r"<[^>]+>", "", html.split("<pre>")[1]))
+
+    assert "one & two" in stripped
+    assert "one < two" in stripped
+
+
+def test_render_diff_honors_font_and_theme():
+    html = render.render_diff("@@ -1 +1 @@\n-old\n+new\n", font="serif", theme="sepia")
+
+    assert 'data-theme="sepia"' in html
+    assert "DejaVu Serif" in html
+
+
+def test_render_diff_reports_an_empty_patch():
+    html = render.render_diff("")
+
+    assert "No changes in this commit" in html
+    assert "<pre>" not in html
+
+
+def test_render_diff_does_not_invoke_cmark(monkeypatch):
+    def fail(*args, **kwargs):
+        raise AssertionError("cmark-gfm must not be invoked for diff rendering")
+
+    monkeypatch.setattr(render.subprocess, "run", fail)
+
+    assert "+new" in unescape(re.sub(r"<[^>]+>", "", render.render_diff("@@ -1 +1 @@\n-old\n+new\n")))
