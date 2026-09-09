@@ -1,5 +1,7 @@
 """Repository history queries, tested against real temporary repositories."""
 
+import dataclasses
+
 import pytest
 
 pygit2 = pytest.importorskip("pygit2")
@@ -24,7 +26,7 @@ def test_commit_record_is_frozen():
         when=None,
         path="doc.md",
     )
-    with pytest.raises(Exception):
+    with pytest.raises(dataclasses.FrozenInstanceError):
         commit.sha = "1" * 40
 
 
