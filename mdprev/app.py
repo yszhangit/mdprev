@@ -256,7 +256,12 @@ class PreviewWindow(Gtk.ApplicationWindow):
         self._set_sidebar_visible(button.get_active())
 
     def _set_sidebar_visible(self, visible: bool) -> None:
-        if self._repo is None:
+        if self._repo is None or visible == self._sidebar_visible:
+            # The equality check also breaks the reentrancy below: setting the
+            # button's active state emits "toggled" synchronously, which calls
+            # back into this method before the outer call below returns. That
+            # nested call sees the same (already-applied) state and bails out
+            # here, so the query and the preferences write below each run once.
             return
         self._sidebar_visible = visible
         self._sidebar.set_visible(visible)

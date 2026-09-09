@@ -187,8 +187,27 @@ class HistorySidebar(Gtk.Box):
 
         working = self._working_row()
         self._list.append(working)
+
+        selected_row = working
+        on_page = self._selected is not None and any(
+            commit.sha == self._selected.sha for commit in self._commits
+        )
+        if self._selected is not None and not on_page:
+            # The selected commit fell off the currently loaded page (e.g. a
+            # deep "Show more" selection, refetched after the sidebar was
+            # hidden and reshown). The window is still displaying it, so the
+            # list must still visibly indicate it rather than silently
+            # falling back to "Working copy" while a historic revision is on
+            # screen.
+            off_page_row = self._commit_row(self._selected)
+            self._list.append(off_page_row)
+            selected_row = off_page_row
+
         for commit in self._commits:
-            self._list.append(self._commit_row(commit))
+            row = self._commit_row(commit)
+            self._list.append(row)
+            if self._selected is not None and commit.sha == self._selected.sha:
+                selected_row = row
         if self._message is not None:
             self._list.append(self._message_row(self._message))
         if self._truncated:
@@ -198,22 +217,10 @@ class HistorySidebar(Gtk.Box):
         if self._cursor is not None:
             self._list.append(self._action_row("Show more", self._load_more))
 
-        selected_row = working
-        if self._selected is not None:
-            for row in self._iter_rows():
-                if getattr(row, "commit", None) is not None and row.commit.sha == self._selected.sha:
-                    selected_row = row
-                    break
         self._list.select_row(selected_row)
         self._suppress = False
         if self._repo is not None and self._path is not None:
             self.refresh_status()
-
-    def _iter_rows(self):
-        row = self._list.get_first_child()
-        while row is not None:
-            yield row
-            row = row.get_next_sibling()
 
     def _working_row(self) -> Gtk.ListBoxRow:
         row = Gtk.ListBoxRow()
@@ -306,8 +313,13 @@ class HistorySidebar(Gtk.Box):
     def select_working_copy(self) -> None:
         """Return to the working copy, as Escape and sidebar-close do."""
 
-        if self._selected is None:
-            return
+        # No guard on self._selected here: the caller (PreviewWindow) is the
+        # authority on whether a historic revision is on screen, and it only
+        # calls this when one is. Bailing out early based on self._selected
+        # alone would repeat the desync this method exists to correct: this
+        # field can legitimately be out of step with what the window is
+        # displaying (see _rebuild), and skipping the callback in that case
+        # would leave a historic revision on screen with nothing selected.
         self._selected = None
         self._rebuild()
         self._on_select(None, self._mode)
