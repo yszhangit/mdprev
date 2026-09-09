@@ -445,3 +445,36 @@ def test_working_patch_reports_an_unreadable_file(repo_factory):
 
     with pytest.raises(git_history.GitHistoryError):
         git_history.working_patch(repo, workdir / "doc.md")
+
+
+def test_is_modified_is_false_on_a_clean_checkout(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "committed\n", "First")
+
+    assert git_history.is_modified(repo, workdir / "doc.md") is False
+
+
+def test_is_modified_is_true_for_an_unstaged_edit(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "committed\n", "First")
+    (workdir / "doc.md").write_text("edited\n", encoding="utf-8")
+
+    assert git_history.is_modified(repo, workdir / "doc.md") is True
+
+
+def test_is_modified_is_true_for_a_staged_but_uncommitted_edit(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "committed\n", "First")
+    (workdir / "doc.md").write_text("staged\n", encoding="utf-8")
+    repo.index.add("doc.md")
+    repo.index.write()
+
+    assert git_history.is_modified(repo, workdir / "doc.md") is True
+
+
+def test_is_modified_is_false_for_a_path_outside_the_repository(repo_factory, tmp_path):
+    repo, _workdir = repo_factory()
+    outside = tmp_path / "elsewhere.md"
+    outside.write_text("# Title\n", encoding="utf-8")
+
+    assert git_history.is_modified(repo, outside) is False

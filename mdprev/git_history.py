@@ -314,3 +314,23 @@ def working_patch(repo, path: Path) -> str:
         new_as_path=relative,
     )
     return patch.text or ""
+
+
+def is_modified(repo, path: Path) -> bool:
+    """Report whether the file differs from HEAD, staged or unstaged.
+
+    Local status only: no remote, upstream, or ahead/behind information is
+    consulted.
+    """
+
+    try:
+        relative = _relative_path(repo, path)
+    except GitHistoryError:
+        return False
+    try:
+        status = repo.status_file(relative)
+    except KeyError:
+        return False
+    if status & FileStatus.IGNORED:
+        return False
+    return status != FileStatus.CURRENT
