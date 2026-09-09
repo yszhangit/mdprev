@@ -260,3 +260,66 @@ def test_history_resumes_after_a_truncated_walk(repo_factory, monkeypatch):
     second = git_history.history(repo, workdir / "doc.md", after=first.next_cursor)
 
     assert [c.summary for c in second.commits] == ["Touches doc"]
+
+
+def rename_file(repo, workdir, old_relpath, new_relpath, message, when=1700000300):
+    """Rename a tracked file and commit the rename."""
+    (workdir / old_relpath).rename(workdir / new_relpath)
+    repo.index.remove(old_relpath)
+    repo.index.add(new_relpath)
+    repo.index.write()
+    tree = repo.index.write_tree()
+    signature = pygit2.Signature("Test Author", "test@example.com", when, 0)
+    oid = repo.create_commit("HEAD", signature, signature, message, tree, [repo.head.target])
+    return str(oid)
+
+
+def test_history_follows_a_rename(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "old.md", "shared content\n" * 20, "Add old",
+                when=1700000000)
+    rename_file(repo, workdir, "old.md", "new.md", "Rename to new", when=1700000100)
+    commit_file(repo, workdir, "new.md", "shared content\n" * 20 + "more\n", "Edit new",
+                when=1700000200)
+
+    result = git_history.history(repo, workdir / "new.md")
+
+    assert [c.summary for c in result.commits] == ["Edit new", "Rename to new", "Add old"]
+
+
+def test_history_reports_the_path_in_force_at_each_commit(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "old.md", "shared content\n" * 20, "Add old",
+                when=1700000000)
+    rename_file(repo, workdir, "old.md", "new.md", "Rename to new", when=1700000100)
+
+    result = git_history.history(repo, workdir / "new.md")
+
+    by_summary = {c.summary: c.path for c in result.commits}
+    assert by_summary["Rename to new"] == "new.md"
+    assert by_summary["Add old"] == "old.md"
+
+
+def test_history_cursor_carries_the_path_across_a_rename(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "old.md", "shared content\n" * 20, "Add old",
+                when=1700000000)
+    rename_file(repo, workdir, "old.md", "new.md", "Rename to new", when=1700000100)
+
+    first = git_history.history(repo, workdir / "new.md", limit=1)
+
+    assert first.next_cursor.path == "old.md"
+    second = git_history.history(repo, workdir / "new.md", limit=1, after=first.next_cursor)
+    assert [c.summary for c in second.commits] == ["Add old"]
+
+
+def test_history_follows_a_nested_path(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "docs/guide/doc.md", "one\n", "First", when=1700000000)
+    commit_file(repo, workdir, "docs/guide/doc.md", "two\n", "Second", when=1700000100)
+    commit_file(repo, workdir, "docs/other.md", "x\n", "Unrelated", when=1700000200)
+
+    result = git_history.history(repo, workdir / "docs" / "guide" / "doc.md")
+
+    assert [c.summary for c in result.commits] == ["Second", "First"]
+    assert result.commits[0].path == "docs/guide/doc.md"

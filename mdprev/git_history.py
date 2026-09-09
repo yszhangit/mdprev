@@ -109,7 +109,7 @@ def is_tracked(repo, path: Path) -> bool:
     return relative in repo.index
 
 
-def _entry(tree, relpath: str):
+def _entry(tree, relpath: str) -> "pygit2.Blob | None":
     """Return the blob at relpath within tree, or None when absent.
 
     Path segments are walked explicitly so that nested paths behave the same
@@ -145,12 +145,34 @@ def _commit_record(commit, path: str) -> Commit:
     )
 
 
+def _rename_source(repo, parent, commit, tracked: str) -> str | None:
+    """Return the file's previous name when this commit renamed it.
+
+    Only called when the path exists in the commit and is absent from the
+    parent, because computing a rename-detecting diff is far more expensive
+    than the tree lookups that drive the walk.
+    """
+
+    diff = repo.diff(parent.tree, commit.tree)
+    diff.find_similar()
+    for patch in diff:
+        delta = patch.delta
+        if delta.new_file.path == tracked and delta.status == DeltaStatus.RENAMED:
+            return delta.old_file.path
+    return None
+
+
 def history(repo, path: Path, limit: int = 10, after: Cursor | None = None) -> History:
     """Return commits touching path, newest first.
 
     A commit touches the file when the blob recorded at the tracked path
     differs from the one recorded in its first parent.  Merge commits are
-    compared against their first parent only, matching git log --follow.
+    compared against their first parent only, so history follows a single
+    line of descent through a merge rather than every side.  When the
+    tracked path exists in a commit but is absent from that parent, a
+    rename-detecting diff is run to check whether the file was renamed; if
+    so, older revisions are looked up under the previous name, matching
+    git log --follow.
     """
 
     if repo.head_is_unborn:
@@ -188,7 +210,14 @@ def history(repo, path: Path, limit: int = 10, after: Cursor | None = None) -> H
         if current_id == parent_id:
             continue
 
+        renamed_from = None
+        if entry is not None and parent_entry is None and parent is not None:
+            renamed_from = _rename_source(repo, parent, commit, tracked)
+
         commits.append(_commit_record(commit, tracked))
+        if renamed_from is not None:
+            # Older revisions carry the file under its previous name.
+            tracked = renamed_from
         if len(commits) >= limit:
             next_cursor = Cursor(sha=str(commit.id), path=tracked)
             break
