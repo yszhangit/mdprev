@@ -260,14 +260,20 @@ def file_at(repo, sha: str, path: str) -> str:
     commit = _lookup_commit(repo, sha)
     try:
         blob = _entry(commit.tree, path)
+        if blob is None:
+            raise GitHistoryError(f"{path} does not exist at {sha[:7]}")
+        # pygit2 blobs are lazily loaded: _entry() above only walks tree
+        # entries and never touches the object store, so a missing or
+        # corrupt blob is not discovered until its content is actually
+        # accessed here. Both accesses must stay inside this guard.
+        binary = blob.is_binary
+        data = blob.data
     except (pygit2.GitError, KeyError, OSError) as exc:
         raise GitHistoryError(f"Unable to read {path} at {sha[:7]}") from exc
-    if blob is None:
-        raise GitHistoryError(f"{path} does not exist at {sha[:7]}")
-    if blob.is_binary:
+    if binary:
         raise GitHistoryError(f"Unable to read {path} at {sha[:7]}: the file is binary")
     try:
-        return blob.data.decode("utf-8")
+        return data.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise GitHistoryError(
             f"Unable to read {path} at {sha[:7]}: the file is not valid UTF-8"

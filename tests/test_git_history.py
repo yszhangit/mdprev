@@ -525,20 +525,31 @@ def test_expected_libgit2_failures_convert_to_git_history_error(repo_factory):
     """A repository that vanishes mid-session must not leak raw libgit2
     errors (GitError/KeyError) out of these four entry points. Design §5.5
     promises GitHistoryError from every one of them; both consumers
-    (sidebar._fetch, app.load_document) catch only that type. A fresh
-    Repository handle is opened before deletion so libgit2's in-process
-    object cache from the writes above cannot mask the failure.
+    (sidebar._fetch, app.load_document) catch only that type.
+
+    Removing only ``.git`` (not the whole workdir) with the *same* repo
+    handle that performed the writes is deliberate, not incidental: pygit2
+    blobs are lazily loaded, so a tree/commit lookup can succeed against
+    libgit2's in-process object cache while the blob's *content* -- read
+    later, via ``.is_binary``/``.data``/``Patch.create_from`` -- is not
+    cached and still has to hit the now-missing object store. A fresh
+    ``Repository`` handle (which has no warm cache at all) fails at the
+    first lookup instead and does not exercise this lazy-access path, which
+    is exactly the gap that let file_at() leak a raw KeyError past its first
+    version of this guard -- caught only once this test was rewritten to
+    reproduce it this way. The working copy file itself is left on disk so
+    working_patch()'s own read of it is unaffected by this repository
+    corruption.
     """
     repo, workdir = repo_factory()
     sha = commit_file(repo, workdir, "doc.md", "one\n", "First")
-    fresh = pygit2.Repository(str(workdir))
-    shutil.rmtree(workdir)
+    shutil.rmtree(workdir / ".git")
 
     with pytest.raises(git_history.GitHistoryError):
-        git_history.history(fresh, workdir / "doc.md")
+        git_history.history(repo, workdir / "doc.md")
     with pytest.raises(git_history.GitHistoryError):
-        git_history.file_at(fresh, sha, "doc.md")
+        git_history.file_at(repo, sha, "doc.md")
     with pytest.raises(git_history.GitHistoryError):
-        git_history.patch_for(fresh, sha, "doc.md")
+        git_history.patch_for(repo, sha, "doc.md")
     with pytest.raises(git_history.GitHistoryError):
-        git_history.working_patch(fresh, workdir / "doc.md")
+        git_history.working_patch(repo, workdir / "doc.md")
