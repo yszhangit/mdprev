@@ -553,3 +553,227 @@ def test_expected_libgit2_failures_convert_to_git_history_error(repo_factory):
         git_history.patch_for(repo, sha, "doc.md")
     with pytest.raises(git_history.GitHistoryError):
         git_history.working_patch(repo, workdir / "doc.md")
+    record = git_history.Commit(
+        sha=sha, short_sha=sha[:7], summary="First", author="Test Author",
+        when=None, path="doc.md",
+    )
+    with pytest.raises(git_history.GitHistoryError):
+        git_history.compare(repo, workdir / "doc.md", None, record)
+
+
+from mdprev.diffmodel import EMPTY_STATS, FileStats  # noqa: E402
+
+
+def records(repo, workdir, relpath="doc.md"):
+    """Commit records touching relpath, newest first."""
+    return git_history.history(repo, workdir / relpath, limit=50).commits
+
+
+def test_working_copy_marker_is_a_single_equal_value():
+    assert git_history.WORKING_COPY == git_history.WorkingCopy()
+
+
+def test_compare_two_commits_explicitly(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "one\n", "First", when=1700000000)
+    commit_file(repo, workdir, "doc.md", "one\ntwo\n", "Second", when=1700000100)
+    commit_file(repo, workdir, "doc.md", "one\ntwo\nthree\n", "Third", when=1700000200)
+    third, _second, first = records(repo, workdir)
+
+    comparison = git_history.compare(repo, workdir / "doc.md", first, third)
+
+    assert comparison.explicit_base is True
+    assert comparison.base.label == f"{first.short_sha}  First"
+    assert comparison.target.label == f"{third.short_sha}  Third"
+    assert comparison.additions == 2
+    assert comparison.deletions == 0
+    assert "+three" in comparison.patch_text
+    assert comparison.base.stats == FileStats(size=4, lines=1, words=1)
+    assert comparison.target.stats == FileStats(size=14, lines=3, words=3)
+
+
+def test_compare_newer_base_against_older_target_reads_base_to_target(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "one\n", "First", when=1700000000)
+    commit_file(repo, workdir, "doc.md", "one\ntwo\nthree\n", "Second", when=1700000100)
+    second, first = records(repo, workdir)
+
+    comparison = git_history.compare(repo, workdir / "doc.md", second, first)
+
+    assert comparison.additions == 0
+    assert comparison.deletions == 2
+    assert "-three" in comparison.patch_text
+
+
+def test_compare_commit_against_the_working_copy(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "committed\n", "First")
+    (first,) = records(repo, workdir)
+    (workdir / "doc.md").write_text("edited text\n", encoding="utf-8")
+
+    comparison = git_history.compare(
+        repo, workdir / "doc.md", first, git_history.WORKING_COPY
+    )
+
+    assert comparison.target.label == "Working copy"
+    assert comparison.target.stats == FileStats(size=12, lines=1, words=2)
+    assert "+edited text" in comparison.patch_text
+
+
+def test_compare_working_copy_as_base(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "committed\n", "First")
+    (first,) = records(repo, workdir)
+    (workdir / "doc.md").write_text("edited\n", encoding="utf-8")
+
+    comparison = git_history.compare(
+        repo, workdir / "doc.md", git_history.WORKING_COPY, first
+    )
+
+    assert comparison.base.label == "Working copy"
+    assert "-edited" in comparison.patch_text
+    assert "+committed" in comparison.patch_text
+
+
+def test_compare_root_commit_has_no_base(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "one\n", "First")
+    (first,) = records(repo, workdir)
+
+    comparison = git_history.compare(repo, workdir / "doc.md", None, first)
+
+    assert comparison.explicit_base is False
+    assert comparison.base.label == "(none)"
+    assert comparison.base.path is None
+    assert comparison.base.stats == EMPTY_STATS
+    assert comparison.additions == 1
+
+
+def test_compare_selecting_the_pinned_version_uses_the_implicit_base(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "one\n", "First", when=1700000000)
+    commit_file(repo, workdir, "doc.md", "two\n", "Second", when=1700000100)
+    second, first = records(repo, workdir)
+
+    comparison = git_history.compare(repo, workdir / "doc.md", second, second)
+
+    assert comparison.explicit_base is False
+    assert comparison.base.label == f"{first.short_sha}  First"
+
+
+def test_compare_across_a_rename_reports_both_paths(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "old.md", "shared content\n" * 20, "Add old",
+                when=1700000000)
+    rename_file(repo, workdir, "old.md", "new.md", "Rename", when=1700000100)
+    commit_file(repo, workdir, "new.md", "shared content\n" * 20 + "more\n", "Edit",
+                when=1700000200)
+    edit, _rename, add = records(repo, workdir, "new.md")
+
+    comparison = git_history.compare(repo, workdir / "new.md", add, edit)
+
+    assert comparison.base.path == "old.md"
+    assert comparison.target.path == "new.md"
+    assert "+more" in comparison.patch_text
+
+
+def test_compare_implicit_base_of_a_rename_uses_the_old_name(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "old.md", "shared content\n" * 20, "Add old",
+                when=1700000000)
+    rename_file(repo, workdir, "old.md", "new.md", "Rename", when=1700000100)
+    rename, _add = records(repo, workdir, "new.md")
+
+    comparison = git_history.compare(repo, workdir / "new.md", None, rename)
+
+    assert comparison.base.path == "old.md"
+    assert "old.md" in comparison.patch_text
+
+
+def test_compare_unchanged_versions_is_empty(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "same\n", "First")
+    (first,) = records(repo, workdir)
+
+    comparison = git_history.compare(
+        repo, workdir / "doc.md", first, git_history.WORKING_COPY
+    )
+
+    assert comparison.patch_text == ""
+    assert comparison.hunks == []
+    assert (comparison.additions, comparison.deletions) == (0, 0)
+
+
+def test_compare_hunk_lines_agree_with_line_counts(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "a\nb\nc\nd\n", "First", when=1700000000)
+    commit_file(repo, workdir, "doc.md", "a\nB\nc\nd\ne", "Second", when=1700000100)
+    second, first = records(repo, workdir)
+
+    comparison = git_history.compare(repo, workdir / "doc.md", first, second)
+    lines = [line for hunk in comparison.hunks for line in hunk.lines]
+
+    assert {line.origin for line in lines} <= {" ", "+", "-"}
+    assert sum(line.origin == "+" for line in lines) == comparison.additions
+    assert sum(line.origin == "-" for line in lines) == comparison.deletions
+    assert [line.text for line in lines if line.origin == "+"] == ["B", "e"]
+    removed = next(line for line in lines if line.origin == "-")
+    assert (removed.old_lineno, removed.new_lineno) == (2, -1)
+
+
+def test_compare_binary_content_has_no_stats(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "text\n", "First", when=1700000000)
+    commit_file(repo, workdir, "doc.md", b"\x00\x01binary", "Second", when=1700000100)
+    second, first = records(repo, workdir)
+
+    comparison = git_history.compare(repo, workdir / "doc.md", first, second)
+
+    assert comparison.binary is True
+    assert comparison.target.stats is None
+    assert comparison.target.stats_error == "the file is binary"
+
+
+def test_compare_rejects_an_unreadable_working_copy(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "one\n", "First")
+    (first,) = records(repo, workdir)
+    (workdir / "doc.md").unlink()
+
+    with pytest.raises(git_history.GitHistoryError):
+        git_history.compare(repo, workdir / "doc.md", first, git_history.WORKING_COPY)
+
+
+def test_revision_stats_for_commit_and_working_copy(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "one two\n", "First")
+    (first,) = records(repo, workdir)
+    (workdir / "doc.md").write_text("one two three\n", encoding="utf-8")
+
+    assert git_history.revision_stats(repo, workdir / "doc.md", first) == FileStats(8, 1, 2)
+    assert git_history.revision_stats(
+        repo, workdir / "doc.md", git_history.WORKING_COPY
+    ) == FileStats(14, 1, 3)
+
+
+def test_revision_stats_is_none_for_unusable_content(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", b"\xff\xfe", "Invalid", when=1700000000)
+    commit_file(repo, workdir, "doc.md", b"\x00bin", "Binary", when=1700000100)
+    binary, invalid = records(repo, workdir)
+
+    assert git_history.revision_stats(repo, workdir / "doc.md", binary) is None
+    assert git_history.revision_stats(repo, workdir / "doc.md", invalid) is None
+
+
+def test_revision_stats_is_none_where_the_commit_deleted_the_file(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "one\n", "First", when=1700000000)
+    repo.index.remove("doc.md")
+    repo.index.write()
+    tree = repo.index.write_tree()
+    signature = pygit2.Signature("Test Author", "test@example.com", 1700000100, 0)
+    repo.create_commit("HEAD", signature, signature, "Delete", tree, [repo.head.target])
+    deletion = records(repo, workdir)[0]
+
+    assert git_history.revision_stats(repo, workdir / "doc.md", deletion) is None
