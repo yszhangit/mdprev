@@ -1,13 +1,5 @@
-import pytest
-
 import mdprev.app as app_module
 from gi.repository import Gtk
-
-
-@pytest.fixture
-def gtk_display():
-    if not Gtk.init_check():
-        pytest.skip("no display available")
 
 
 def _buttons(row):
@@ -65,3 +57,37 @@ def test_main_forwards_process_arguments(monkeypatch):
 
     assert app_module.main() == 0
     assert received == ["mdprev", "/tmp/example.md"]
+
+
+from datetime import datetime, timezone  # noqa: E402
+
+from mdprev.git_history import WORKING_COPY, Commit  # noqa: E402
+
+
+def _commit(sha="a1b2c3d" + "0" * 33):
+    return Commit(sha=sha, short_sha=sha[:7], summary="Notes", author="A",
+                  when=datetime(2026, 9, 2, tzinfo=timezone.utc), path="doc.md")
+
+
+def test_window_titles_for_the_working_copy():
+    assert app_module.window_titles("doc.md", WORKING_COPY, None, "rendered") == ("doc.md", None)
+
+
+def test_window_titles_for_a_commit():
+    assert app_module.window_titles("doc.md", _commit(), None, "diff") == (
+        "doc.md — a1b2c3d", "a1b2c3d · Sep 2, 2026",
+    )
+
+
+def test_window_titles_for_a_comparison():
+    base = _commit("9f8e7d6" + "0" * 33)
+
+    assert app_module.window_titles("doc.md", WORKING_COPY, base, "side-by-side") == (
+        "doc.md — 9f8e7d6 → Working copy", "9f8e7d6 → Working copy",
+    )
+
+
+def test_window_titles_ignore_the_base_in_rendered_mode():
+    assert app_module.window_titles("doc.md", WORKING_COPY, _commit(), "rendered") == (
+        "doc.md", None,
+    )

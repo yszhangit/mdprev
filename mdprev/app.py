@@ -14,12 +14,13 @@ gi.require_version("WebKit", "6.0")
 from gi.repository import Gio, GLib, Gtk, Pango, WebKit  # noqa: E402
 
 from . import git_history  # noqa: E402
+from .git_history import WORKING_COPY, Commit, Revision  # noqa: E402
 from .preferences import load_preferences, save_preferences  # noqa: E402
 from .render import (  # noqa: E402
     RenderError,
     error_document,
     read_source,
-    render_diff,
+    render_comparison,
     render_markdown,
 )
 from .sidebar import HistorySidebar  # noqa: E402
@@ -62,6 +63,26 @@ def choice_row(
     return row
 
 
+def _short(revision: Revision) -> str:
+    return revision.short_sha if isinstance(revision, Commit) else "Working copy"
+
+
+def window_titles(
+    name: str, target: Revision, base: Revision | None, mode: str
+) -> tuple[str, str | None]:
+    """Return the window title and header subtitle (None hides it)."""
+
+    if base is not None and mode != "rendered":
+        pair = f"{_short(base)} → {_short(target)}"
+        return f"{name} — {pair}", pair
+    if isinstance(target, Commit):
+        return (
+            f"{name} — {target.short_sha}",
+            f"{target.short_sha} · {target.when.strftime('%b %-d, %Y')}",
+        )
+    return name, None
+
+
 class PreviewWindow(Gtk.ApplicationWindow):
     def __init__(self, app: "MdPrevApplication", path: Path):
         super().__init__(application=app)
@@ -78,8 +99,10 @@ class PreviewWindow(Gtk.ApplicationWindow):
         self._history_limit: int = prefs.get("history_limit", 10)
         self._sidebar_visible: bool = prefs.get("sidebar_visible", False)
         self._repo = git_history.find_repository(path) if git_history.AVAILABLE else None
-        # None means the working copy; a Commit means a historic revision.
-        self._revision_commit = None
+        # What the sidebar last reported: the version shown, and the version it
+        # is compared against (None for its implicit parent / HEAD).
+        self._target: Revision = WORKING_COPY
+        self._base: Revision | None = None
         self._mode = "rendered"
 
         width = prefs.get("window_width", 920)
@@ -301,15 +324,13 @@ class PreviewWindow(Gtk.ApplicationWindow):
             self._sidebar.load(self._repo, self.path, self._history_limit)
         save_preferences(sidebar_visible=visible)
 
-    def _history_selected(self, commit, mode: str) -> None:
-        changed_revision = (
-            (commit.sha if commit else None)
-            != (self._revision_commit.sha if self._revision_commit else None)
-        )
-        self._revision_commit = commit
+    def _history_selected(self, target: Revision, base: Revision | None, mode: str) -> None:
+        changed = target != self._target or base != self._base
+        self._target = target
+        self._base = base
         self._mode = mode
         self._update_titles()
-        if changed_revision:
+        if changed:
             # A different document: start at the top rather than restoring an
             # offset that means nothing here.
             self.load_document()
@@ -317,21 +338,15 @@ class PreviewWindow(Gtk.ApplicationWindow):
             self.refresh_document()
 
     def _show_working_copy(self) -> None:
-        if self._revision_commit is None:
+        if self._target == WORKING_COPY:
             return
         self._sidebar.select_working_copy()
 
     def _update_titles(self) -> None:
-        if self._revision_commit is None:
-            self.set_title(self.path.name)
-            self._subtitle_label.set_visible(False)
-            return
-        short = self._revision_commit.short_sha
-        self.set_title(f"{self.path.name} — {short}")
-        self._subtitle_label.set_text(
-            f"{short} · {self._revision_commit.when.strftime('%b %-d, %Y')}"
-        )
-        self._subtitle_label.set_visible(True)
+        title, subtitle = window_titles(self.path.name, self._target, self._base, self._mode)
+        self.set_title(title)
+        self._subtitle_label.set_text(subtitle or "")
+        self._subtitle_label.set_visible(subtitle is not None)
 
     def refresh_document(self) -> None:
         script = "window.scrollY"
@@ -363,7 +378,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
         # working-copy row's status dot is refreshed either way.
         if self._sidebar_visible:
             self._sidebar.refresh_status()
-        if self._revision_commit is not None:
+        if self._target != WORKING_COPY:
             # A historic revision is on screen.  Saving the file must not swap
             # it out; only the working-copy row's status may change.
             return GLib.SOURCE_REMOVE
@@ -394,23 +409,22 @@ class PreviewWindow(Gtk.ApplicationWindow):
         self._title_label.set_text(self.path.name)
         self._update_titles()
         try:
-            if self._mode == "diff" and self._repo is not None:
-                if self._revision_commit is None:
-                    patch = git_history.working_patch(self._repo, self.path)
-                else:
-                    patch = git_history.patch_for(
-                        self._repo, self._revision_commit.sha, self._revision_commit.path
-                    )
-                html = render_diff(patch, font=self._font, theme=self._theme)
-            elif self._revision_commit is None:
-                source = read_source(self.path)
+            if self._mode != "rendered" and self._repo is not None:
+                comparison = git_history.compare(
+                    self._repo, self.path, self._base, self._target
+                )
+                html = render_comparison(
+                    comparison, self._mode, font=self._font, theme=self._theme
+                )
+            elif isinstance(self._target, Commit):
+                source = git_history.file_at(
+                    self._repo, self._target.sha, self._target.path
+                )
                 html = render_markdown(
                     source, self.path.parent, font=self._font, theme=self._theme
                 )
             else:
-                source = git_history.file_at(
-                    self._repo, self._revision_commit.sha, self._revision_commit.path
-                )
+                source = read_source(self.path)
                 html = render_markdown(
                     source, self.path.parent, font=self._font, theme=self._theme
                 )

@@ -17,7 +17,7 @@ gi.require_version("Pango", "1.0")
 from gi.repository import Gdk, Gtk, Pango  # noqa: E402
 
 from . import git_history  # noqa: E402
-from .git_history import Commit  # noqa: E402
+from .git_history import WORKING_COPY, Commit, Revision, WorkingCopy  # noqa: E402
 
 
 # The application has no other GTK-level styling; all document styling lives
@@ -42,6 +42,8 @@ _CSS = b"""
 
 _CSS_INSTALLED = False
 
+_MODES = (("rendered", "Rendered"), ("diff", "Diff"), ("side-by-side", "Side by side"))
+
 
 def install_css() -> None:
     """Register the sidebar's style classes once on the default display."""
@@ -60,8 +62,12 @@ def install_css() -> None:
     _CSS_INSTALLED = True
 
 
+def _key(revision: Revision) -> str:
+    return "working" if isinstance(revision, WorkingCopy) else revision.sha
+
+
 class HistorySidebar(Gtk.Box):
-    def __init__(self, on_select: Callable[[Commit | None, str], None]):
+    def __init__(self, on_select: Callable[[Revision, Revision | None, str], None]):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         install_css()
         self._on_select = on_select
@@ -73,7 +79,8 @@ class HistorySidebar(Gtk.Box):
         self._truncated = False
         self._message: str | None = None
         self._mode = "rendered"
-        self._selected: Commit | None = None
+        self._selected: Revision = WORKING_COPY
+        self._rows: dict[str, Gtk.ListBoxRow] = {}
         # Rebuilding the list re-emits row selection; suppress the callback so
         # a refresh never looks like a user choosing a revision.
         self._suppress = False
@@ -99,22 +106,23 @@ class HistorySidebar(Gtk.Box):
         box.set_margin_end(6)
         box.set_homogeneous(True)
 
-        self._rendered_button = Gtk.ToggleButton(label="Rendered")
-        self._rendered_button.set_active(True)
-        self._diff_button = Gtk.ToggleButton(label="Diff")
-        self._diff_button.set_group(self._rendered_button)
-        self._rendered_button.connect("toggled", self._mode_toggled)
-
-        box.append(self._rendered_button)
-        box.append(self._diff_button)
+        self._mode_buttons: list[Gtk.ToggleButton] = []
+        for mode, label in _MODES:
+            button = Gtk.ToggleButton(label=label)
+            if self._mode_buttons:
+                button.set_group(self._mode_buttons[0])
+            button.set_active(mode == self._mode)
+            button.connect("toggled", self._mode_toggled, mode)
+            box.append(button)
+            self._mode_buttons.append(button)
         return box
 
-    def _mode_toggled(self, button: Gtk.ToggleButton) -> None:
-        mode = "rendered" if button.get_active() else "diff"
-        if mode == self._mode:
+    def _mode_toggled(self, button: Gtk.ToggleButton, mode: str) -> None:
+        # Each group change toggles two buttons; only the newly active one counts.
+        if not button.get_active() or mode == self._mode:
             return
         self._mode = mode
-        self._on_select(self._selected, self._mode)
+        self._emit()
 
     # -- loading ---------------------------------------------------------
 
@@ -184,30 +192,22 @@ class HistorySidebar(Gtk.Box):
         self._suppress = True
         while (row := self._list.get_first_child()) is not None:
             self._list.remove(row)
+        self._rows = {}
 
-        working = self._working_row()
-        self._list.append(working)
+        self._list.append(self._working_row())
 
-        selected_row = working
-        on_page = self._selected is not None and any(
-            commit.sha == self._selected.sha for commit in self._commits
-        )
-        if self._selected is not None and not on_page:
-            # The selected commit fell off the currently loaded page (e.g. a
-            # deep "Show more" selection, refetched after the sidebar was
-            # hidden and reshown). The window is still displaying it, so the
-            # list must still visibly indicate it rather than silently
-            # falling back to "Working copy" while a historic revision is on
-            # screen.
-            off_page_row = self._commit_row(self._selected)
-            self._list.append(off_page_row)
-            selected_row = off_page_row
-
-        for commit in self._commits:
-            row = self._commit_row(commit)
-            self._list.append(row)
-            if self._selected is not None and commit.sha == self._selected.sha:
-                selected_row = row
+        # The selected commit can fall off the currently loaded page (e.g. a
+        # deep "Show more" selection, refetched after the sidebar was hidden
+        # and reshown). The window is still displaying it, so the list must
+        # still visibly indicate it rather than silently falling back to
+        # "Working copy" while a historic revision is on screen.
+        loaded = {commit.sha for commit in self._commits}
+        extras = [
+            revision for revision in (self._selected,)
+            if isinstance(revision, Commit) and revision.sha not in loaded
+        ]
+        for commit in extras + self._commits:
+            self._list.append(self._commit_row(commit))
         if self._message is not None:
             self._list.append(self._message_row(self._message))
         if self._truncated:
@@ -217,14 +217,14 @@ class HistorySidebar(Gtk.Box):
         if self._cursor is not None:
             self._list.append(self._action_row("Show more", self._load_more))
 
-        self._list.select_row(selected_row)
+        self._list.select_row(self._rows.get(_key(self._selected), self._rows["working"]))
         self._suppress = False
         if self._repo is not None and self._path is not None:
             self.refresh_status()
 
     def _working_row(self) -> Gtk.ListBoxRow:
         row = Gtk.ListBoxRow()
-        row.commit = None
+        row.revision = WORKING_COPY
         row.action = None
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         box.set_margin_top(8)
@@ -246,11 +246,12 @@ class HistorySidebar(Gtk.Box):
         box.append(title)
         box.append(status_box)
         row.set_child(box)
+        self._rows["working"] = row
         return row
 
     def _commit_row(self, commit: Commit) -> Gtk.ListBoxRow:
         row = Gtk.ListBoxRow()
-        row.commit = commit
+        row.revision = commit
         row.action = None
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         box.set_margin_top(8)
@@ -274,11 +275,12 @@ class HistorySidebar(Gtk.Box):
         box.append(top)
         box.append(summary)
         row.set_child(box)
+        self._rows[commit.sha] = row
         return row
 
     def _message_row(self, text: str) -> Gtk.ListBoxRow:
         row = Gtk.ListBoxRow()
-        row.commit = None
+        row.revision = None
         row.action = None
         row.set_selectable(False)
         row.set_activatable(False)
@@ -291,7 +293,7 @@ class HistorySidebar(Gtk.Box):
 
     def _action_row(self, text: str, callback) -> Gtk.ListBoxRow:
         row = Gtk.ListBoxRow()
-        row.commit = None
+        row.revision = None
         row.action = callback
         row.set_selectable(False)
         button = Gtk.Button(label=text)
@@ -305,10 +307,14 @@ class HistorySidebar(Gtk.Box):
     def _row_selected(self, _list, row) -> None:
         if self._suppress or row is None:
             return
-        if getattr(row, "action", None) is not None:
+        revision = getattr(row, "revision", None)
+        if revision is None:
             return
-        self._selected = getattr(row, "commit", None)
-        self._on_select(self._selected, self._mode)
+        self._selected = revision
+        self._emit()
+
+    def _emit(self) -> None:
+        self._on_select(self._selected, None, self._mode)
 
     def select_working_copy(self) -> None:
         """Return to the working copy, as Escape and sidebar-close do."""
@@ -320,6 +326,6 @@ class HistorySidebar(Gtk.Box):
         # field can legitimately be out of step with what the window is
         # displaying (see _rebuild), and skipping the callback in that case
         # would leave a historic revision on screen with nothing selected.
-        self._selected = None
+        self._selected = WORKING_COPY
         self._rebuild()
-        self._on_select(None, self._mode)
+        self._emit()
