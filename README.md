@@ -50,14 +50,24 @@ zoom level, and window size) are saved globally across sessions. The source file
 When the open document is inside a git repository, a sidebar button appears in
 the header bar (`Ctrl`+`H`). The sidebar lists the commits that touch the file
 and pins a "Working copy" entry on top, marked with a red dot when the file has
-uncommitted changes and a green dot when it matches HEAD. Selecting a commit
-shows that version of the document; the Rendered/Diff switch alternates between
-the formatted document and the unified diff of its Markdown source. Renames are
-followed. Live reload pauses while a historic revision is shown and resumes on
-returning to the working copy. `Escape` returns to the working copy at any
-time a commit is selected, whether or not the sidebar is open — this is the
-only way back once the sidebar is closed, so it is worth knowing even though
-there is no menu item or button for it.
+uncommitted changes and a green dot when it matches HEAD. Selecting a commit shows that version of the document; the Rendered / Diff /
+Side by side switch alternates between the formatted document, the unified
+diff of its Markdown source, and the same diff in two columns. Each entry shows
+the file's size, line count, and word count at that version.
+
+To compare any two versions, click the pin on one entry to make it the base,
+then select another; both diff views then show base → selected, headed by the
+size, line, and word changes between them. Pins appear once there are two
+versions to compare — two commits, or a commit plus uncommitted changes.
+
+Renames are followed. Live reload pauses while a historic revision is shown and
+resumes on returning to the working copy.
+
+`Escape` first clears a pin, then returns to the working copy at any time a
+commit is selected, whether or not the sidebar is open — this is the only way
+back once the sidebar is closed, so it is worth knowing even though there is no
+menu item or button for it. Live reload stays on while the working copy is
+either side of a comparison.
 
 Two limitations are worth knowing. The commit list refreshes when the sidebar is
 opened, so a commit created elsewhere while the window is open appears the next

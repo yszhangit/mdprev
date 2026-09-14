@@ -277,9 +277,63 @@ Common aliases such as `sh`, `bash`, `py`, `js`, `ts`, `yml`, `html`, `cpp`,
 11. MVP 1, MVP 2, and MVP 3 acceptance criteria continue to pass.
 12. With python3-pygit2 absent, the application behaves as it did before MVP 4.
 
-## 7. Deferred features
+## 7. MVP 5: revision comparison
 
-The following are outside MVP 1, MVP 2, MVP 3, and MVP 4:
+### 7.1 Required behavior
+
+- Every version row in the history sidebar carries a pin button. Pinning a
+  row makes it the base of a comparison; clicking the pin again unpins it. At
+  most one row is pinned. Pinning alone never changes the displayed document.
+- Pins are shown only when at least two versions exist: the loaded commits,
+  plus the working copy when it has uncommitted changes (an unloaded page of
+  history counts as at least one more commit). The working-copy row carries a
+  pin only while it is modified.
+- With a pin set, selecting another row shows base → target; selecting the
+  pinned row shows it as if nothing were pinned. Without a pin, a commit is
+  compared with its first parent and the working copy with HEAD.
+- The view switch offers Rendered, Diff (unified), and Side by side.
+- Side by side shows base and target in two columns of one table that scroll
+  together without JavaScript, wraps long lines, pairs removed and added
+  lines, highlights changed words in similar lines, and folds unchanged
+  stretches.
+- Every version row shows its size, line count, and word count, omitted for
+  binary or non-UTF-8 content. Both diff views open with a header naming both
+  versions and the size, line, and word changes between them.
+- Escape closes an open display-options popover; otherwise it clears the pin;
+  otherwise it returns to the working copy.
+- Unpinning the base of the comparison on screen re-renders it against the
+  implicit base. A working-copy pin is cleared when a save makes the file
+  match HEAD.
+- Live reload stays active whenever the working copy is either side of the
+  comparison on screen.
+- Historic content remains untrusted: all diff text is escaped and never
+  parsed as Markdown.
+
+### 7.2 MVP 5 acceptance criteria
+
+1. Pins appear exactly per 7.1 and update when a save changes the working
+   copy's modified state.
+2. With a pin set, both diff modes show base → target; selecting the pinned
+   row shows its unpinned behavior.
+3. Pinning alone never changes the displayed document.
+4. Side by side scrolls as one, wraps long lines, and pairs, folds, and
+   word-highlights changes.
+5. Unified and side-by-side views of the same comparison report the same
+   added and removed line counts.
+6. Every version row shows size, lines, and words, or omits them for binary /
+   non-UTF-8 content.
+7. Both diff views open with the stats header.
+8. Live reload updates the view when the working copy is on either side.
+9. Escape closes an open display-options popover without touching the pin;
+   otherwise it clears the pin before returning to the working copy.
+10. All new views are legible in Light, Dark, Sepia, and System themes.
+11. The source file and the repository are never written.
+12. MVP 1-4 acceptance criteria continue to pass, including behavior without
+    python3-pygit2.
+
+## 8. Deferred features
+
+The following are outside MVP 1 through MVP 5:
 
 - Markdown editing or split editor/preview
 - Tabs, session restoration, and recent-file management
@@ -305,11 +359,11 @@ The following are outside MVP 1, MVP 2, MVP 3, and MVP 4:
 - Per-file preferences or per-document state restoration
 - Repository mutation of any kind: checkout, restore, stash, commit
 - Remote git information: fetch, upstream tracking, ahead/behind
-- Branch, tag, or ref browsing; blame; side-by-side or rendered-prose diffs
+- Branch, tag, or ref browsing; blame; rendered-prose diffs
 
 Deferred features require an explicit requirements change before implementation.
 
-## 8. Non-goals and quality priorities
+## 9. Non-goals and quality priorities
 
 When tradeoffs arise, prioritize in this order:
 

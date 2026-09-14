@@ -20,6 +20,8 @@ MVP 1 before starting MVP 2.
 - `cmark-gfm` for Markdown-to-HTML conversion
 - `python3-pygments` only in MVP 2
 - `python3-pygit2` only in MVP 4, and only for the git history sidebar
+- MVP 5 (revision comparison) adds no dependencies; word-level diffing uses
+  the standard library's `difflib`
 
 Do not introduce Qt, Electron, Tauri, Node.js, a JavaScript framework, a Python
 virtual environment, or a bundled web server.
