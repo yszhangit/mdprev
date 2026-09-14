@@ -107,6 +107,12 @@ may only be a **base** when modified, per §4.2.
 - `Escape` clears the pin first if one is set. A second `Escape` returns to the
   working copy, as in MVP 4. The `win.working-copy` action gains this
   two-step behavior.
+- **Escape never acts on revisions while the display-options popover is
+  open.** Normally the popover's grab keeps the key from reaching the window
+  shortcut at all (GTK 4.22 propagates key events only up to the grab widget).
+  As a guard against focus ending up outside the open popover, the action
+  first checks `self._popover.get_visible()` and, if so, pops it down and
+  does nothing else.
 - If the working copy is pinned and a save makes it unmodified, the pin is
   cleared and the view re-renders against the implicit base.
 - If a re-query (sidebar reopened) makes pins unavailable, the pin is cleared.
@@ -322,8 +328,9 @@ def render_comparison(
 - **Live reload** is active when either side of the comparison on screen is
   the working copy, so saving updates the diff and its stats. When neither
   side is the working copy, MVP 4's suppression applies.
-- `win.working-copy` (Escape) calls `sidebar.clear_pin()` first and falls back
-  to returning to the working copy.
+- `win.working-copy` (Escape) closes the display-options popover if it is
+  open and stops there; otherwise it calls `sidebar.clear_pin()` and falls
+  back to returning to the working copy.
 - Titles per §4.6.
 
 ## 7. Side-by-side rendering
@@ -405,7 +412,9 @@ None crashes the application.
    commit. Undo the edits and save: the pin clears.
 4. Pin a commit, select the working copy, edit and save: the diff and stats
    update live.
-5. Escape clears the pin, then returns to the working copy.
+5. Escape clears the pin, then returns to the working copy. With the
+   display-options popover open, Escape only closes the popover and the pin
+   survives.
 6. Side by side is legible in Light, Dark, Sepia, and System, at 50% and 200%
    zoom, with a long unbroken line.
 7. A file renamed in history: comparing across the rename shows the
@@ -436,7 +445,8 @@ None crashes the application.
    binary / non-UTF-8 content.
 7. Both diff views open with the stats line of §5.3.
 8. Live reload updates the view when the working copy is on either side.
-9. Escape clears the pin before returning to the working copy.
+9. Escape closes an open display-options popover without touching the pin;
+   otherwise it clears the pin before returning to the working copy.
 10. All new views are legible in Light, Dark, Sepia, and System themes.
 11. The source file and the repository are never written; all diff text is
     escaped and never parsed as Markdown.
