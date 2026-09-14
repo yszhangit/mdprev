@@ -51,13 +51,19 @@ The diff always reads **base → target**, whichever of the two is older.
 Every row that represents a version carries a flat `view-pin-symbolic` button
 at the end of its first line.
 
-- The button is dimmed (`.dim-label`) when not pinned and full-strength with
-  the `.accent` style class when pinned.
+- The button is dimmed (`.mdprev-pin`, reduced opacity) when not pinned and
+  full-strength in the accent color (`.mdprev-pin-active`, `@accent_color`
+  with a `#3584e4` fallback) when pinned, registered through the sidebar's
+  existing `Gtk.CssProvider`.
 - Clicking it pins that row as the base. Clicking the pinned row's button
   unpins it. Pinning another row moves the pin; there is at most one.
 - The button consumes its click, so pinning never changes the selection, and
   **pinning alone never changes the view**. The view changes only when the
   reader selects a row.
+- One exception keeps the screen honest: unpinning (by button, Escape, or the
+  automatic clearing of §4.4) the base of the comparison **currently on
+  screen** re-renders the selected row against its implicit base. Unpinning
+  a pin that no selection has used yet changes nothing.
 - Tooltip and accessible label: "Compare from this version" when unpinned,
   "Stop comparing from this version" when pinned.
 
@@ -165,7 +171,8 @@ Each version row gains a third, dimmed, single-line label:
 ```
 
 - Commit rows: from the blob at that commit, computed when the row is built
-  and cached by blob id for the window's lifetime (blobs are immutable). One
+  and cached by `(sha, path)` for the window's lifetime (commits are
+  immutable). One
   page is `history_limit` rows, 10 by default.
 - Working-copy row: from the file on disk, refreshed with the status dot on
   save.
