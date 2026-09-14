@@ -198,3 +198,79 @@ def test_render_diff_does_not_invoke_cmark(monkeypatch):
     monkeypatch.setattr(render.subprocess, "run", fail)
 
     assert "+new" in unescape(re.sub(r"<[^>]+>", "", render.render_diff("@@ -1 +1 @@\n-old\n+new\n")))
+
+
+from mdprev.diffmodel import Comparison, DiffLine, FileStats, Hunk, Side  # noqa: E402
+
+
+def make_comparison(**overrides):
+    values = dict(
+        base=Side("a1b2c3d  Old notes", "doc.md", FileStats(4, 1, 1), None),
+        target=Side("Working copy", "doc.md", FileStats(8, 2, 2), None),
+        patch_text="@@ -1 +1,2 @@\n one\n+two\n",
+        hunks=[Hunk(1, 1, 1, 2, [DiffLine(" ", 1, 1, "one"), DiffLine("+", -1, 2, "two")])],
+        additions=1,
+        deletions=0,
+        binary=False,
+        explicit_base=True,
+    )
+    values.update(overrides)
+    return Comparison(**values)
+
+
+def test_render_comparison_header_names_both_sides_and_stats():
+    html = render.render_comparison(make_comparison(), "diff")
+
+    assert '<header class="compare">' in html
+    assert "a1b2c3d  Old notes" in html
+    assert "Working copy" in html
+    assert "Size +4 B (4 B → 8 B) · Lines +1 −0 (net +1) · Words +1 (1 → 2)" in html
+
+
+def test_render_comparison_unified_body_highlights_the_patch():
+    html = render.render_comparison(make_comparison(), "diff")
+
+    assert 'class="highlight language-diff"' in html
+    assert '<main class="wide">' not in html
+
+
+def test_render_comparison_escapes_labels_and_paths():
+    comparison = make_comparison(
+        base=Side("<b>x</b> & y", "<old>.md", FileStats(1, 1, 1), None),
+        target=Side("Working copy", "new&.md", FileStats(1, 1, 1), None),
+    )
+
+    html = render.render_comparison(comparison, "diff")
+
+    assert "<b>x</b>" not in html
+    assert "&lt;b&gt;x&lt;/b&gt; &amp; y" in html
+    assert "Renamed: &lt;old&gt;.md → new&amp;.md" in html
+
+
+def test_render_comparison_omits_renamed_line_for_the_same_path():
+    assert "Renamed:" not in render.render_comparison(make_comparison(), "diff")
+
+
+def test_render_comparison_shows_missing_base_as_none():
+    comparison = make_comparison(base=Side("(none)", None, FileStats(0, 0, 0), None))
+
+    html = render.render_comparison(comparison, "diff")
+
+    assert "(none)" in html
+    assert "Renamed:" not in html
+
+
+def test_render_comparison_reports_unavailable_stats():
+    comparison = make_comparison(
+        target=Side("Working copy", "doc.md", None, "the file is binary")
+    )
+
+    assert "Stats unavailable: the file is binary" in render.render_comparison(comparison, "diff")
+
+
+def test_render_comparison_empty_message_depends_on_the_pin():
+    pinned = make_comparison(patch_text="", hunks=[], additions=0)
+    implicit = make_comparison(patch_text="", hunks=[], additions=0, explicit_base=False)
+
+    assert "No changes between these versions." in render.render_comparison(pinned, "diff")
+    assert "No changes in this commit." in render.render_comparison(implicit, "diff")

@@ -35,6 +35,8 @@ from pygments.lexers import (
     YamlLexer,
 )
 
+from .diffmodel import Comparison, stats_line
+
 
 class RenderError(RuntimeError):
     """An expected error while reading or rendering a document."""
@@ -284,8 +286,8 @@ def error_document(message: str, font: str = "system", theme: str = "system") ->
     )
 
 
-def render_diff(patch: str, font: str = "system", theme: str = "system") -> str:
-    """Return a complete HTML document showing a unified diff.
+def _diff_body(patch: str, empty_message: str) -> str:
+    """Return the highlighted unified diff, or empty_message for no changes.
 
     cmark is deliberately not involved: a patch must never be parsed as
     Markdown.  Highlighting reuses the DiffLexer already available for fenced
@@ -293,26 +295,58 @@ def render_diff(patch: str, font: str = "system", theme: str = "system") -> str:
     """
 
     if not patch.strip():
-        return _document(
-            '<p class="empty">No changes in this commit.</p>', font=font, theme=theme
-        )
+        return f'<p class="empty">{escape(empty_message)}</p>'
     highlighted = highlight(patch, DiffLexer(), HtmlFormatter(nowrap=True))
     # The formatter must never be allowed to change the patch text.
     rendered_text = unescape(re.sub(r"<[^>]+>", "", highlighted))
     if rendered_text.rstrip("\n") != patch.rstrip("\n"):
-        return _document(
-            f'<pre><code class="language-diff">{escape(patch)}</code></pre>',
-            font=font,
-            theme=theme,
+        return f'<pre><code class="language-diff">{escape(patch)}</code></pre>'
+    return f'<pre><code class="highlight language-diff">{highlighted}</code></pre>'
+
+
+def render_diff(patch: str, font: str = "system", theme: str = "system") -> str:
+    """Return a complete HTML document showing a unified diff."""
+
+    return _document(_diff_body(patch, "No changes in this commit."), font=font, theme=theme)
+
+
+def _comparison_header(comparison: Comparison) -> str:
+    base, target = comparison.base, comparison.target
+    parts = [
+        '<header class="compare">',
+        f'<p class="sides"><span class="side">{escape(base.label)}</span>'
+        f' <span class="arrow">→</span> '
+        f'<span class="side">{escape(target.label)}</span></p>',
+        f'<p class="stats">{escape(stats_line(comparison))}</p>',
+    ]
+    if base.path and target.path and base.path != target.path:
+        parts.append(
+            f'<p class="renamed">Renamed: {escape(base.path)} → {escape(target.path)}</p>'
         )
-    return _document(
-        f'<pre><code class="highlight language-diff">{highlighted}</code></pre>',
-        font=font,
-        theme=theme,
-    )
+    parts.append("</header>")
+    return "".join(parts)
 
 
-def _document(body: str, font: str = "system", theme: str = "system") -> str:
+def _empty_message(comparison: Comparison) -> str:
+    if comparison.explicit_base:
+        return "No changes between these versions."
+    return "No changes in this commit."
+
+
+def render_comparison(
+    comparison: Comparison, mode: str, font: str = "system", theme: str = "system"
+) -> str:
+    """Return a complete HTML document comparing two versions.
+
+    Every piece of text is escaped; nothing here is parsed as Markdown.
+    """
+
+    header = _comparison_header(comparison)
+    body = _diff_body(comparison.patch_text, _empty_message(comparison))
+    return _document(header + body, font=font, theme=theme)
+
+
+def _document(body: str, font: str = "system", theme: str = "system", wide: bool = False) -> str:
     font_stack = _FONTS.get(font, _FONTS["system"])
     theme_attr = theme if theme in _THEMES else "system"
     return f"""<!doctype html>
@@ -430,7 +464,12 @@ table {{ border-collapse: collapse; display: block; overflow-x: auto; max-width:
 th, td {{ border: 1px solid var(--table-border); padding: .4rem .65rem; }}
 th {{ background: var(--th-bg); }} .error {{ max-width: 42rem; }}
 .empty {{ color: var(--quote-color); }}
-</style></head><body><main>{body}</main></body></html>"""
+main.wide {{ max-width: none; }}
+.compare {{ margin: 0 0 1.25rem; padding-bottom: .75rem; border-bottom: 1px solid var(--table-border); }}
+.compare p {{ margin: .15rem 0; }}
+.compare .side {{ font-weight: 600; }}
+.compare .stats, .compare .renamed {{ color: var(--quote-color); font-size: .9rem; }}
+</style></head><body><main{' class="wide"' if wide else ''}>{body}</main></body></html>"""
 
 
 def _heading_ids(body: str) -> str:
