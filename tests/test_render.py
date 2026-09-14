@@ -274,3 +274,172 @@ def test_render_comparison_empty_message_depends_on_the_pin():
 
     assert "No changes between these versions." in render.render_comparison(pinned, "diff")
     assert "No changes in this commit." in render.render_comparison(implicit, "diff")
+
+
+def _rows(html):
+    """Return each table row as a list of (cell class, cell inner HTML)."""
+    return [
+        re.findall(r'<td class="([\w ]+)"(?: colspan="4")?>(.*?)</td>', row, re.DOTALL)
+        for row in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.DOTALL)
+    ]
+
+
+def _sbs(hunks, base_lines, **overrides):
+    comparison = make_comparison(
+        hunks=hunks, base=Side("a1b2c3d  Old", "doc.md", FileStats(1, base_lines, 1), None),
+        **overrides,
+    )
+    return render.render_comparison(comparison, "side-by-side")
+
+
+def test_side_by_side_is_a_wide_table():
+    html = _sbs([Hunk(1, 1, 1, 1, [DiffLine(" ", 1, 1, "same")])], base_lines=1)
+
+    assert '<main class="wide">' in html
+    assert '<table class="sbs">' in html
+    assert '<header class="compare">' in html
+
+
+def test_side_by_side_pairs_equal_runs():
+    hunk = Hunk(1, 3, 1, 3, [
+        DiffLine(" ", 1, 1, "a"),
+        DiffLine("-", 2, -1, "old"),
+        DiffLine("+", -1, 2, "new"),
+        DiffLine(" ", 3, 3, "c"),
+    ])
+
+    rows = _rows(_sbs([hunk], base_lines=3))
+
+    assert [[cls for cls, _ in row] for row in rows] == [
+        ["ln", "ctx", "ln", "ctx"],
+        ["ln", "del", "ln", "add"],
+        ["ln", "ctx", "ln", "ctx"],
+    ]
+    assert rows[1][0][1] == "2" and rows[1][2][1] == "2"
+
+
+def test_side_by_side_pads_a_longer_deletion_run():
+    hunk = Hunk(1, 2, 1, 1, [
+        DiffLine("-", 1, -1, "one"),
+        DiffLine("-", 2, -1, "two"),
+        DiffLine("+", -1, 1, "uno"),
+    ])
+
+    rows = _rows(_sbs([hunk], base_lines=2))
+
+    assert [[cls for cls, _ in row] for row in rows] == [
+        ["ln", "del", "ln", "add"],
+        ["ln", "del", "ln", "none"],
+    ]
+    assert rows[1][2][1] == ""
+
+
+def test_side_by_side_pads_a_longer_addition_run():
+    hunk = Hunk(1, 1, 1, 2, [
+        DiffLine("-", 1, -1, "one"),
+        DiffLine("+", -1, 1, "uno"),
+        DiffLine("+", -1, 2, "dos"),
+    ])
+
+    rows = _rows(_sbs([hunk], base_lines=1))
+
+    assert [cls for cls, _ in rows[1]] == ["ln", "none", "ln", "add"]
+
+
+def test_side_by_side_pure_additions_and_deletions():
+    added = Hunk(0, 0, 1, 1, [DiffLine("+", -1, 1, "new")])
+    deleted = Hunk(1, 1, 0, 0, [DiffLine("-", 1, -1, "gone")])
+
+    assert [cls for cls, _ in _rows(_sbs([added], base_lines=0))[0]] == ["ln", "none", "ln", "add"]
+    assert [cls for cls, _ in _rows(_sbs([deleted], base_lines=1))[0]] == ["ln", "del", "ln", "none"]
+
+
+def test_side_by_side_folds_unchanged_stretches():
+    first = Hunk(10, 1, 10, 1, [DiffLine("-", 10, -1, "x"), DiffLine("+", -1, 10, "y")])
+    second = Hunk(20, 1, 20, 1, [DiffLine("-", 20, -1, "p"), DiffLine("+", -1, 20, "q")])
+
+    html = _sbs([first, second], base_lines=30)
+    folds = re.findall(r'<tr class="fold"><td class="fold" colspan="4">(.*?)</td></tr>', html)
+
+    assert folds == ["⋯ 9 unchanged lines", "⋯ 9 unchanged lines", "⋯ 10 unchanged lines"]
+
+
+def test_side_by_side_fold_after_an_insertion_hunk():
+    # "-3,0 +4,2" inserts after base line 3; base lines 1-3 precede it.
+    hunk = Hunk(3, 0, 4, 2, [DiffLine("+", -1, 4, "a"), DiffLine("+", -1, 5, "b")])
+
+    html = _sbs([hunk], base_lines=5)
+    folds = re.findall(r'colspan="4">(.*?)</td>', html)
+
+    assert folds == ["⋯ 3 unchanged lines", "⋯ 2 unchanged lines"]
+
+
+def test_side_by_side_singular_fold():
+    hunk = Hunk(2, 1, 2, 1, [DiffLine("-", 2, -1, "x"), DiffLine("+", -1, 2, "y")])
+
+    assert "⋯ 1 unchanged line<" in _sbs([hunk], base_lines=2)
+
+
+def test_side_by_side_highlights_changed_words_in_similar_lines():
+    hunk = Hunk(1, 1, 1, 1, [
+        DiffLine("-", 1, -1, "the quick brown fox"),
+        DiffLine("+", -1, 1, "the quick red fox"),
+    ])
+
+    html = _sbs([hunk], base_lines=1)
+
+    assert "<del>brown</del>" in html
+    assert "<ins>red</ins>" in html
+
+
+def test_side_by_side_skips_word_highlights_for_dissimilar_lines():
+    hunk = Hunk(1, 1, 1, 1, [
+        DiffLine("-", 1, -1, "alpha beta"),
+        DiffLine("+", -1, 1, "totally different words here"),
+    ])
+
+    html = _sbs([hunk], base_lines=1)
+
+    assert "<del>" not in html.split("<table")[1]
+    assert "<ins>" not in html.split("<table")[1]
+
+
+def test_side_by_side_escapes_line_text():
+    hunk = Hunk(1, 1, 1, 1, [
+        DiffLine("-", 1, -1, "<script>alert(1)</script> & co"),
+        DiffLine("+", -1, 1, "<script>alert(2)</script> & co"),
+    ])
+
+    html = _sbs([hunk], base_lines=1)
+
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
+    assert "&amp; co" in html
+
+
+def test_side_by_side_needs_utf8_text():
+    binary = make_comparison(binary=True)
+    undecodable = make_comparison(
+        target=Side("Working copy", "doc.md", None, "the file is not valid UTF-8")
+    )
+
+    for comparison in (binary, undecodable):
+        html = render.render_comparison(comparison, "side-by-side")
+        assert "Side-by-side view needs UTF-8 text on both sides." in html
+        assert '<header class="compare">' in html
+
+
+def test_side_by_side_empty_comparison():
+    html = _sbs([], base_lines=3, patch_text="", additions=0)
+
+    assert "No changes between these versions." in html
+    assert '<table class="sbs">' not in html
+
+
+def test_diff_palette_is_defined_for_every_theme():
+    html = render.render_comparison(make_comparison(), "side-by-side")
+
+    for theme in ('html[data-theme="light"]', 'html[data-theme="dark"]', 'html[data-theme="sepia"]'):
+        block = html.split(theme + " {", 1)[1].split("}", 1)[0]
+        assert "--diff-del-bg" in block and "--diff-add-word" in block
+    assert html.count("--diff-fold:") >= 5  # :root, system dark, light, dark, sepia

@@ -7,6 +7,7 @@ filtered before it is handed to WebKit.
 
 from __future__ import annotations
 
+import difflib
 from html import escape, unescape
 from html.parser import HTMLParser
 from pathlib import Path
@@ -35,7 +36,7 @@ from pygments.lexers import (
     YamlLexer,
 )
 
-from .diffmodel import Comparison, stats_line
+from .diffmodel import Comparison, DiffLine, stats_line
 
 
 class RenderError(RuntimeError):
@@ -333,6 +334,115 @@ def _empty_message(comparison: Comparison) -> str:
     return "No changes in this commit."
 
 
+_TOKEN = re.compile(r"\s+|\w+|[^\w\s]")
+_WORD_DIFF_MIN_RATIO = 0.5
+
+
+def _word_diff(old: str, new: str) -> tuple[str, str]:
+    """Return escaped old/new text with differing tokens wrapped.
+
+    Lines that share less than half their tokens are shown as a plain
+    replacement: highlighting scattered fragments of unrelated lines hides
+    more than it shows.
+    """
+
+    a = _TOKEN.findall(old)
+    b = _TOKEN.findall(new)
+    matcher = difflib.SequenceMatcher(None, a, b, autojunk=False)
+    if matcher.ratio() < _WORD_DIFF_MIN_RATIO:
+        return escape(old), escape(new)
+    left: list[str] = []
+    right: list[str] = []
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        old_part = escape("".join(a[i1:i2]))
+        new_part = escape("".join(b[j1:j2]))
+        if tag == "equal":
+            left.append(old_part)
+            right.append(new_part)
+            continue
+        if old_part:
+            left.append(f"<del>{old_part}</del>")
+        if new_part:
+            right.append(f"<ins>{new_part}</ins>")
+    return "".join(left), "".join(right)
+
+
+def _lineno(value: int) -> str:
+    return str(value) if value > 0 else ""
+
+
+def _sbs_row(old: DiffLine | None, new: DiffLine | None) -> str:
+    if old is not None and new is not None and old.origin == " ":
+        text = escape(old.text)
+        return (
+            f'<tr><td class="ln">{_lineno(old.old_lineno)}</td><td class="ctx">{text}</td>'
+            f'<td class="ln">{_lineno(new.new_lineno)}</td><td class="ctx">{text}</td></tr>'
+        )
+    if old is not None and new is not None:
+        left, right = _word_diff(old.text, new.text)
+    else:
+        left = escape(old.text) if old is not None else ""
+        right = escape(new.text) if new is not None else ""
+    return (
+        f'<tr><td class="ln">{_lineno(old.old_lineno) if old else ""}</td>'
+        f'<td class="{"del" if old else "none"}">{left}</td>'
+        f'<td class="ln">{_lineno(new.new_lineno) if new else ""}</td>'
+        f'<td class="{"add" if new else "none"}">{right}</td></tr>'
+    )
+
+
+def _fold_row(count: int) -> str:
+    noun = "line" if count == 1 else "lines"
+    return (
+        f'<tr class="fold"><td class="fold" colspan="4">'
+        f"⋯ {count} unchanged {noun}</td></tr>"
+    )
+
+
+def _side_by_side_body(comparison: Comparison) -> str:
+    if comparison.binary or comparison.base.stats is None or comparison.target.stats is None:
+        return '<p class="empty">Side-by-side view needs UTF-8 text on both sides.</p>'
+    if not comparison.hunks:
+        return f'<p class="empty">{escape(_empty_message(comparison))}</p>'
+
+    rows: list[str] = []
+    shown_through = 0  # last base line number covered by a hunk
+    for hunk in comparison.hunks:
+        # A hunk that removes nothing names the base line it follows.
+        first_old = hunk.old_start if hunk.old_lines else hunk.old_start + 1
+        if first_old - 1 > shown_through:
+            rows.append(_fold_row(first_old - 1 - shown_through))
+        shown_through = first_old + hunk.old_lines - 1
+
+        lines = hunk.lines
+        i = 0
+        while i < len(lines):
+            if lines[i].origin == " ":
+                rows.append(_sbs_row(lines[i], lines[i]))
+                i += 1
+                continue
+            removed: list[DiffLine] = []
+            while i < len(lines) and lines[i].origin == "-":
+                removed.append(lines[i])
+                i += 1
+            added: list[DiffLine] = []
+            while i < len(lines) and lines[i].origin == "+":
+                added.append(lines[i])
+                i += 1
+            for k in range(max(len(removed), len(added))):
+                rows.append(_sbs_row(
+                    removed[k] if k < len(removed) else None,
+                    added[k] if k < len(added) else None,
+                ))
+    if comparison.base.stats.lines > shown_through:
+        rows.append(_fold_row(comparison.base.stats.lines - shown_through))
+
+    return (
+        '<table class="sbs"><colgroup><col class="ln"><col><col class="ln"><col>'
+        f'</colgroup><tbody>{"".join(rows)}</tbody></table>'
+    )
+
+
 def render_comparison(
     comparison: Comparison, mode: str, font: str = "system", theme: str = "system"
 ) -> str:
@@ -342,6 +452,10 @@ def render_comparison(
     """
 
     header = _comparison_header(comparison)
+    if mode == "side-by-side":
+        return _document(
+            header + _side_by_side_body(comparison), font=font, theme=theme, wide=True
+        )
     body = _diff_body(comparison.patch_text, _empty_message(comparison))
     return _document(header + body, font=font, theme=theme)
 
@@ -363,6 +477,11 @@ def _document(body: str, font: str = "system", theme: str = "system", wide: bool
   --quote-border: #bbbbbb;
   --table-border: #b9b9b9;
   --th-bg: #e7e7e7;
+  --diff-del-bg: #fbe3e4;
+  --diff-add-bg: #e2f5e7;
+  --diff-del-word: #f5b8bb;
+  --diff-add-word: #a9e2b9;
+  --diff-fold: #ececec;
 }}
 
 html[data-theme="system"] {{
@@ -380,6 +499,11 @@ html[data-theme="system"] {{
     --quote-border: #777777;
     --table-border: #666666;
     --th-bg: #3b3b3b;
+    --diff-del-bg: #4a2527;
+    --diff-add-bg: #1f3d2a;
+    --diff-del-word: #7a3438;
+    --diff-add-word: #2f6b44;
+    --diff-fold: #303030;
   }}
 }}
 
@@ -394,6 +518,11 @@ html[data-theme="light"] {{
   --quote-border: #bbbbbb;
   --table-border: #b9b9b9;
   --th-bg: #e7e7e7;
+  --diff-del-bg: #fbe3e4;
+  --diff-add-bg: #e2f5e7;
+  --diff-del-word: #f5b8bb;
+  --diff-add-word: #a9e2b9;
+  --diff-fold: #ececec;
 }}
 
 html[data-theme="dark"] {{
@@ -407,6 +536,11 @@ html[data-theme="dark"] {{
   --quote-border: #777777;
   --table-border: #666666;
   --th-bg: #3b3b3b;
+  --diff-del-bg: #4a2527;
+  --diff-add-bg: #1f3d2a;
+  --diff-del-word: #7a3438;
+  --diff-add-word: #2f6b44;
+  --diff-fold: #303030;
 }}
 
 html[data-theme="sepia"] {{
@@ -420,6 +554,11 @@ html[data-theme="sepia"] {{
   --quote-border: #c8bba6;
   --table-border: #c8bba6;
   --th-bg: #e4d7bf;
+  --diff-del-bg: #f2d6c9;
+  --diff-add-bg: #dfe8c8;
+  --diff-del-word: #e3ad98;
+  --diff-add-word: #c2d49a;
+  --diff-fold: #e8deca;
 }}
 
 html, body {{ margin: 0; padding: 0; }}
@@ -469,6 +608,15 @@ main.wide {{ max-width: none; }}
 .compare p {{ margin: .15rem 0; }}
 .compare .side {{ font-weight: 600; }}
 .compare .stats, .compare .renamed {{ color: var(--quote-color); font-size: .9rem; }}
+table.sbs {{ display: table; width: 100%; table-layout: fixed; border-collapse: collapse; font-family: 'Ubuntu Sans Mono', 'Ubuntu Mono', 'DejaVu Sans Mono', ui-monospace, monospace; font-size: .9rem; line-height: 1.45; }}
+table.sbs col.ln {{ width: 3.5em; }}
+table.sbs td {{ border: 0; padding: 0 .5rem; vertical-align: top; white-space: pre-wrap; overflow-wrap: anywhere; }}
+table.sbs td.ln {{ text-align: right; color: var(--quote-color); user-select: none; }}
+table.sbs td.del {{ background: var(--diff-del-bg); }}
+table.sbs td.add {{ background: var(--diff-add-bg); }}
+table.sbs del {{ background: var(--diff-del-word); text-decoration: none; }}
+table.sbs ins {{ background: var(--diff-add-word); text-decoration: none; }}
+table.sbs tr.fold td {{ text-align: center; color: var(--quote-color); background: var(--diff-fold); padding: .15rem .5rem; }}
 </style></head><body><main{' class="wide"' if wide else ''}>{body}</main></body></html>"""
 
 
