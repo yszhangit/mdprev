@@ -91,3 +91,44 @@ def test_window_titles_ignore_the_base_in_rendered_mode():
     assert app_module.window_titles("doc.md", WORKING_COPY, _commit(), "rendered") == (
         "doc.md", None,
     )
+
+
+def test_view_changed_ignores_base_in_rendered_mode():
+    commit = _commit()
+    assert app_module.view_changed(WORKING_COPY, None, WORKING_COPY, commit, "rendered") is False
+
+
+def test_view_changed_honors_base_outside_rendered_mode():
+    commit = _commit()
+    assert app_module.view_changed(WORKING_COPY, None, WORKING_COPY, commit, "diff") is True
+
+
+def test_view_changed_when_target_differs():
+    commit = _commit()
+    assert app_module.view_changed(WORKING_COPY, None, commit, None, "rendered") is True
+    assert app_module.view_changed(WORKING_COPY, None, commit, None, "diff") is True
+
+
+def test_view_changed_false_for_the_same_target_and_base():
+    commit = _commit()
+    assert app_module.view_changed(WORKING_COPY, commit, WORKING_COPY, commit, "diff") is False
+
+
+def test_reloads_on_save_when_working_copy_is_the_target():
+    for mode in ("rendered", "diff", "side-by-side"):
+        assert app_module.reloads_on_save(WORKING_COPY, None, mode) is True
+        assert app_module.reloads_on_save(WORKING_COPY, _commit(), mode) is True
+
+
+def test_reloads_on_save_ignores_a_working_copy_base_in_rendered_mode():
+    commit = _commit()
+    assert app_module.reloads_on_save(commit, WORKING_COPY, "rendered") is False
+    assert app_module.reloads_on_save(commit, WORKING_COPY, "diff") is True
+    assert app_module.reloads_on_save(commit, WORKING_COPY, "side-by-side") is True
+
+
+def test_reloads_on_save_false_without_a_working_copy_on_screen():
+    commit = _commit()
+    other = _commit("9f8e7d6" + "0" * 33)
+    assert app_module.reloads_on_save(commit, other, "diff") is False
+    assert app_module.reloads_on_save(commit, None, "diff") is False

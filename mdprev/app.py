@@ -83,6 +83,37 @@ def window_titles(
     return name, None
 
 
+def view_changed(
+    old_target: Revision,
+    old_base: Revision | None,
+    target: Revision,
+    base: Revision | None,
+    mode: str,
+) -> bool:
+    """True when the displayed document differs, so scroll must reset.
+
+    Rendered mode shows only the target, so a base-only change there is not a
+    document change.  A pure mode change (target and base both unchanged)
+    always returns False; the caller re-renders in place for that case.
+    """
+
+    if target != old_target:
+        return True
+    return mode != "rendered" and base != old_base
+
+
+def reloads_on_save(target: Revision, base: Revision | None, mode: str) -> bool:
+    """True when a save to the working copy should refresh what is on screen.
+
+    Rendered mode shows only the target, so a working-copy base is irrelevant
+    there; diff and side-by-side show both sides.
+    """
+
+    if target == WORKING_COPY:
+        return True
+    return mode != "rendered" and base == WORKING_COPY
+
+
 class PreviewWindow(Gtk.ApplicationWindow):
     def __init__(self, app: "MdPrevApplication", path: Path):
         super().__init__(application=app)
@@ -325,7 +356,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
         save_preferences(sidebar_visible=visible)
 
     def _history_selected(self, target: Revision, base: Revision | None, mode: str) -> None:
-        changed = target != self._target or base != self._base
+        changed = view_changed(self._target, self._base, target, base, mode)
         self._target = target
         self._base = base
         self._mode = mode
@@ -387,11 +418,18 @@ class PreviewWindow(Gtk.ApplicationWindow):
         # working-copy row's status dot is refreshed either way.
         if self._repo is not None:
             # Also clears a working-copy pin the save made meaningless, even
-            # while the sidebar is hidden.
+            # while the sidebar is hidden.  refresh_status() may itself emit a
+            # selection change (e.g. that pin clearing), which already calls
+            # _history_selected() -> load_document().  Snapshot first and bail
+            # out if that happened, or the document below would render twice.
+            before = (self._target, self._base)
             self._sidebar.refresh_status()
-        if WORKING_COPY not in (self._target, self._base):
-            # Only historic revisions are on screen.  Saving the file must not
-            # swap them out; only the working-copy row's status may change.
+            if (self._target, self._base) != before:
+                return GLib.SOURCE_REMOVE
+        if not reloads_on_save(self._target, self._base, self._mode):
+            # Rendered mode shows only the target, and no working-copy side is
+            # on screen otherwise.  Saving the file must not swap the view;
+            # only the working-copy row's status may change.
             return GLib.SOURCE_REMOVE
         # WebKit's page JavaScript remains disabled.  Code explicitly evaluated
         # by the host application lets us preserve the reading position.  The

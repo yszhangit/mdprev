@@ -354,6 +354,21 @@ def test_side_by_side_pure_additions_and_deletions():
     assert [cls for cls, _ in _rows(_sbs([deleted], base_lines=1))[0]] == ["ln", "del", "ln", "none"]
 
 
+def test_side_by_side_skips_lines_with_unknown_origin():
+    # A DiffLine whose origin is neither " ", "-", nor "+" must not stall the
+    # pairing loop: it is consumed by neither inner run, so the index would
+    # never advance without an explicit skip.
+    hunk = Hunk(1, 3, 1, 3, [
+        DiffLine(" ", 1, 1, "a"),
+        DiffLine("=", -1, -1, "weird"),
+        DiffLine(" ", 2, 2, "b"),
+    ])
+
+    html = _sbs([hunk], base_lines=3)
+
+    assert "weird" not in html
+
+
 def test_side_by_side_folds_unchanged_stretches():
     first = Hunk(10, 1, 10, 1, [DiffLine("-", 10, -1, "x"), DiffLine("+", -1, 10, "y")])
     second = Hunk(20, 1, 20, 1, [DiffLine("-", 20, -1, "p"), DiffLine("+", -1, 20, "q")])
@@ -415,6 +430,26 @@ def test_side_by_side_escapes_line_text():
     assert "<script>" not in html
     assert "&lt;script&gt;" in html
     assert "&amp; co" in html
+
+
+def test_side_by_side_skips_word_diff_for_very_long_lines():
+    # SequenceMatcher is roughly quadratic; a pair of very long, similar lines
+    # must fall back to an unhighlighted replacement rather than stall the
+    # GTK main thread.
+    words = " ".join(f"word{i}" for i in range(1000))
+    old_line = words
+    new_line = words.replace("word500", "changed")
+    hunk = Hunk(1, 1, 1, 1, [
+        DiffLine("-", 1, -1, old_line),
+        DiffLine("+", -1, 1, new_line),
+    ])
+
+    html = _sbs([hunk], base_lines=1)
+    table = html.split("<table")[1]
+
+    assert "<del>" not in table
+    assert "<ins>" not in table
+    assert "changed" in table
 
 
 def test_side_by_side_needs_utf8_text():

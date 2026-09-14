@@ -336,6 +336,10 @@ def _empty_message(comparison: Comparison) -> str:
 
 _TOKEN = re.compile(r"\s+|\w+|[^\w\s]")
 _WORD_DIFF_MIN_RATIO = 0.5
+# SequenceMatcher is roughly quadratic in the token counts.  A single paired
+# line with about 8000 words measured 4.8s on the GTK main thread; this caps
+# the work per line and falls back to an unhighlighted replacement instead.
+_WORD_DIFF_MAX_WORK = 250_000
 
 
 def _word_diff(old: str, new: str) -> tuple[str, str]:
@@ -348,6 +352,8 @@ def _word_diff(old: str, new: str) -> tuple[str, str]:
 
     a = _TOKEN.findall(old)
     b = _TOKEN.findall(new)
+    if len(a) * len(b) > _WORD_DIFF_MAX_WORK:
+        return escape(old), escape(new)
     matcher = difflib.SequenceMatcher(None, a, b, autojunk=False)
     if matcher.ratio() < _WORD_DIFF_MIN_RATIO:
         return escape(old), escape(new)
@@ -429,6 +435,12 @@ def _side_by_side_body(comparison: Comparison) -> str:
             while i < len(lines) and lines[i].origin == "+":
                 added.append(lines[i])
                 i += 1
+            if not removed and not added:
+                # An origin that is none of " ", "-", "+" is consumed by
+                # neither run above; skip it explicitly so `i` always
+                # advances instead of looping forever.
+                i += 1
+                continue
             for k in range(max(len(removed), len(added))):
                 rows.append(_sbs_row(
                     removed[k] if k < len(removed) else None,
