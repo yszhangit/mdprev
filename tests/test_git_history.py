@@ -9,6 +9,7 @@ import pytest
 pygit2 = pytest.importorskip("pygit2")
 
 from mdprev import git_history  # noqa: E402
+from mdprev.diffmodel import EMPTY_STATS, FileStats  # noqa: E402
 
 
 def test_module_reports_pygit2_available():
@@ -561,9 +562,6 @@ def test_expected_libgit2_failures_convert_to_git_history_error(repo_factory):
         git_history.compare(repo, workdir / "doc.md", None, record)
 
 
-from mdprev.diffmodel import EMPTY_STATS, FileStats  # noqa: E402
-
-
 def records(repo, workdir, relpath="doc.md"):
     """Commit records touching relpath, newest first."""
     return git_history.history(repo, workdir / relpath, limit=50).commits
@@ -688,6 +686,7 @@ def test_compare_implicit_base_of_a_rename_uses_the_old_name(repo_factory):
 
     assert comparison.base.path == "old.md"
     assert "old.md" in comparison.patch_text
+    assert "rename from old.md" in comparison.patch_text
 
 
 def test_compare_unchanged_versions_is_empty(repo_factory):
@@ -777,3 +776,92 @@ def test_revision_stats_is_none_where_the_commit_deleted_the_file(repo_factory):
     deletion = records(repo, workdir)[0]
 
     assert git_history.revision_stats(repo, workdir / "doc.md", deletion) is None
+
+
+def test_revision_stats_raises_for_an_unknown_revision(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "one\n", "First")
+    bogus = git_history.Commit(
+        sha="0" * 40, short_sha="0" * 7, summary="Bogus", author="Test Author",
+        when=None, path="doc.md",
+    )
+
+    with pytest.raises(git_history.GitHistoryError):
+        git_history.revision_stats(repo, workdir / "doc.md", bogus)
+
+
+def test_revision_stats_raises_for_an_unreadable_working_copy(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "one\n", "First")
+    (workdir / "doc.md").unlink()
+
+    with pytest.raises(git_history.GitHistoryError):
+        git_history.revision_stats(repo, workdir / "doc.md", git_history.WORKING_COPY)
+
+
+def test_compare_explicit_base_with_no_content_is_labelled_none(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "one\n", "First", when=1700000000)
+    repo.index.remove("doc.md")
+    repo.index.write()
+    tree = repo.index.write_tree()
+    signature = pygit2.Signature("Test Author", "test@example.com", 1700000100, 0)
+    repo.create_commit("HEAD", signature, signature, "Delete", tree, [repo.head.target])
+    deletion, first = records(repo, workdir)
+
+    comparison = git_history.compare(repo, workdir / "doc.md", deletion, first)
+
+    assert comparison.explicit_base is True
+    assert comparison.base.label == "(none)"
+    assert comparison.base.path is None
+    assert comparison.base.stats == EMPTY_STATS
+
+
+def test_patch_for_ignores_a_working_tree_replaced_by_a_foreign_symlink(
+    repo_factory, tmp_path
+):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "one\n", "First", when=1700000000)
+    second = commit_file(repo, workdir, "doc.md", "two\n", "Second", when=1700000100)
+    outside = tmp_path / "outside.md"
+    outside.write_text("elsewhere\n", encoding="utf-8")
+    (workdir / "doc.md").unlink()
+    (workdir / "doc.md").symlink_to(outside)
+
+    patch = git_history.patch_for(repo, second, "doc.md")
+
+    assert "-one" in patch
+    assert "+two" in patch
+
+
+def test_patch_for_an_empty_file_add_shows_the_new_file_header(repo_factory):
+    repo, workdir = repo_factory()
+    sha = commit_file(repo, workdir, "doc.md", "", "Add empty file")
+
+    patch = git_history.patch_for(repo, sha, "doc.md")
+
+    assert "new file mode" in patch
+
+
+def test_compare_same_sha_different_metadata_is_not_explicit(repo_factory):
+    repo, workdir = repo_factory()
+    commit_file(repo, workdir, "doc.md", "one\n", "First", when=1700000000)
+    commit_file(repo, workdir, "doc.md", "two\n", "Second", when=1700000100)
+    second, first = records(repo, workdir)
+    altered = dataclasses.replace(second, path="other.md", summary="Different")
+
+    comparison = git_history.compare(repo, workdir / "doc.md", altered, second)
+
+    assert comparison.explicit_base is False
+    assert comparison.base.label == f"{first.short_sha}  First"
+
+
+def test_compare_working_copy_against_an_unborn_head_has_no_base(repo_factory):
+    repo, workdir = repo_factory()
+    (workdir / "doc.md").write_text("draft\n", encoding="utf-8")
+
+    comparison = git_history.compare(
+        repo, workdir / "doc.md", None, git_history.WORKING_COPY
+    )
+
+    assert comparison.base.label == "(none)"

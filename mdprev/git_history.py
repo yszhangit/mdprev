@@ -376,7 +376,10 @@ def _content_bytes(content) -> bytes | None:
 
 def _side(label: str, path: str | None, data: bytes | None) -> Side:
     if data is None:
-        return Side(label=label, path=None, stats=EMPTY_STATS, stats_error=None)
+        # A side with no content is labelled "(none)" whether it is the base
+        # or the target, explicit or implicit -- e.g. an explicitly chosen
+        # base that is a commit which deleted the file.
+        return Side(label="(none)", path=None, stats=EMPTY_STATS, stats_error=None)
     try:
         return Side(label=label, path=path, stats=stats_for(data), stats_error=None)
     except StatsUnavailable as exc:
@@ -405,16 +408,56 @@ def _hunks(patch) -> list[Hunk]:
     return hunks
 
 
+def _is_explicit(base: Revision | None, target: Revision) -> bool:
+    """Report whether base names a genuinely different revision from target.
+
+    Two Commit revisions that share a sha are the same version even when
+    their path or summary differ (e.g. one was looked up under a historic
+    name), so identity is decided by sha rather than by full dataclass
+    equality.
+    """
+
+    if base is None:
+        return False
+    if isinstance(base, WorkingCopy) and isinstance(target, WorkingCopy):
+        return False
+    if isinstance(base, Commit) and isinstance(target, Commit):
+        return base.sha != target.sha
+    return True
+
+
+def _is_empty_side(content) -> bool:
+    """True when this side has no content to diff.
+
+    A commit side is empty when its blob is absent (content is None); an
+    empty-but-present blob -- an empty file that was actually committed --
+    is not empty in this sense, so its "new file mode" header still renders.
+    A working-copy side is never absent: reading it always returns bytes,
+    even b"", so an empty file is what "nothing here" means for it.
+    """
+
+    if content is None:
+        return True
+    if isinstance(content, bytes):
+        return content == b""
+    return False
+
+
 def compare(repo, path: Path, base: Revision | None, target: Revision) -> Comparison:
     """Compare two versions of the document at path, reading base → target.
 
-    base None (or equal to target) selects target's implicit base.  One
-    Patch is built and both the unified text and the hunks come from it, so
-    the unified and side-by-side views can never disagree.
+    base None (or naming the same revision as target) selects target's
+    implicit base.  One Patch is built and both the unified text and the
+    hunks come from it, so the unified and side-by-side views can never
+    disagree.  The repo-relative path is only resolved from the filesystem
+    when a side is the working copy: a commit-only comparison (patch_for)
+    must not touch the working tree at all, so a historic patch can still be
+    read even after the working-tree file has been replaced or removed.
     """
 
-    relative = _relative_path(repo, path)
-    explicit = base is not None and base != target
+    explicit = _is_explicit(base, target)
+    needs_relative = isinstance(base, WorkingCopy) or isinstance(target, WorkingCopy)
+    relative = _relative_path(repo, path) if needs_relative else None
     try:
         target_label, target_path, target_content = _resolve(repo, path, relative, target)
         rename_patch = None
@@ -428,7 +471,7 @@ def compare(repo, path: Path, base: Revision | None, target: Revision) -> Compar
         target_data = _content_bytes(target_content)
         if rename_patch is not None:
             patch = rename_patch
-        elif not base_data and not target_data:
+        elif _is_empty_side(base_content) and _is_empty_side(target_content):
             patch = None
         else:
             patch = pygit2.Patch.create_from(
@@ -439,8 +482,7 @@ def compare(repo, path: Path, base: Revision | None, target: Revision) -> Compar
             )
         return Comparison(
             base=_side(base_label, base_path, base_data),
-            target=_side(target_label if target_content is not None else "(none)",
-                         target_path, target_data),
+            target=_side(target_label, target_path, target_data),
             patch_text=(patch.text or "") if patch is not None else "",
             hunks=_hunks(patch) if patch is not None else [],
             additions=patch.line_stats[1] if patch is not None else 0,
@@ -453,19 +495,32 @@ def compare(repo, path: Path, base: Revision | None, target: Revision) -> Compar
 
 
 def revision_stats(repo, path: Path, revision: Revision) -> FileStats | None:
-    """Return the stats of one version, or None when they cannot be counted."""
+    """Return the stats of one version of the document.
 
-    try:
-        if isinstance(revision, WorkingCopy):
-            data = _read_working_copy(path)
-        else:
-            commit = _lookup_commit(repo, revision.sha)
+    None means the content cannot be counted as text (binary, or not valid
+    UTF-8) or the file is absent at that revision.  An unknown revision, or a
+    failure to read the content (a corrupt object store, or an unreadable
+    working copy), raises GitHistoryError instead of being folded into None:
+    callers need to tell "no text stats for this version" apart from "the
+    read itself failed".
+    """
+
+    if isinstance(revision, WorkingCopy):
+        data = _read_working_copy(path)
+    else:
+        commit = _lookup_commit(repo, revision.sha)
+        try:
             blob = _entry(commit.tree, revision.path)
             if blob is None:
                 return None
             data = blob.data
+        except (pygit2.GitError, KeyError, OSError) as exc:
+            raise GitHistoryError(
+                f"Unable to read {revision.path} at {revision.short_sha}"
+            ) from exc
+    try:
         return stats_for(data)
-    except (GitHistoryError, StatsUnavailable, pygit2.GitError, KeyError, OSError):
+    except StatsUnavailable:
         return None
 
 
