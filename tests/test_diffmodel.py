@@ -31,7 +31,7 @@ def test_stats_for_counts_a_last_line_without_newline():
 
 
 def test_stats_for_handles_crlf():
-    assert stats_for(b"a b\r\nc\r\n") == FileStats(size=9, lines=2, words=3)
+    assert stats_for(b"a b\r\nc\r\n") == FileStats(size=8, lines=2, words=3)
 
 
 def test_stats_for_counts_utf8_bytes_and_non_ascii_words():
