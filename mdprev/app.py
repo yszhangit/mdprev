@@ -338,6 +338,15 @@ class PreviewWindow(Gtk.ApplicationWindow):
             self.refresh_document()
 
     def _show_working_copy(self) -> None:
+        """Escape: close the options popover, else unpin, else leave history."""
+
+        # The popover's grab normally keeps Escape from reaching this window
+        # shortcut; this guards the case where focus ended up outside it.
+        if self._popover.get_visible():
+            self._popover.popdown()
+            return
+        if self._sidebar.clear_pin():
+            return
         if self._target == WORKING_COPY:
             return
         self._sidebar.select_working_copy()
@@ -376,11 +385,13 @@ class PreviewWindow(Gtk.ApplicationWindow):
         self._monitor_path()  # reconnect after atomic replacement
         # Saving changes whether the file differs from HEAD, so the
         # working-copy row's status dot is refreshed either way.
-        if self._sidebar_visible:
+        if self._repo is not None:
+            # Also clears a working-copy pin the save made meaningless, even
+            # while the sidebar is hidden.
             self._sidebar.refresh_status()
-        if self._target != WORKING_COPY:
-            # A historic revision is on screen.  Saving the file must not swap
-            # it out; only the working-copy row's status may change.
+        if WORKING_COPY not in (self._target, self._base):
+            # Only historic revisions are on screen.  Saving the file must not
+            # swap them out; only the working-copy row's status may change.
             return GLib.SOURCE_REMOVE
         # WebKit's page JavaScript remains disabled.  Code explicitly evaluated
         # by the host application lets us preserve the reading position.  The

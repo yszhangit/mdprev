@@ -17,6 +17,7 @@ gi.require_version("Pango", "1.0")
 from gi.repository import Gdk, Gtk, Pango  # noqa: E402
 
 from . import git_history  # noqa: E402
+from .diffmodel import FileStats, format_stats, pins_available  # noqa: E402
 from .git_history import WORKING_COPY, Commit, Revision, WorkingCopy  # noqa: E402
 
 
@@ -37,6 +38,17 @@ _CSS = b"""
 }
 .mdprev-sidebar-message {
   padding: 12px;
+}
+.mdprev-pin {
+  min-height: 0;
+  min-width: 0;
+  padding: 2px;
+  opacity: 0.45;
+}
+.mdprev-pin-active {
+  opacity: 1;
+  color: #3584e4;
+  color: @accent_color;
 }
 """
 
@@ -81,6 +93,16 @@ class HistorySidebar(Gtk.Box):
         self._mode = "rendered"
         self._selected: Revision = WORKING_COPY
         self._rows: dict[str, Gtk.ListBoxRow] = {}
+        # The pin is what the reader chose to compare from; the shown base is
+        # what the window was last told, which lags while a new pin awaits a
+        # selection (pinning alone never changes the view).
+        self._pinned: Revision | None = None
+        self._shown_base: Revision | None = None
+        self._modified = False
+        self._pin_buttons: dict[str, Gtk.Button] = {}
+        self._stats_labels: dict[str, Gtk.Label] = {}
+        # Commits are immutable, so their stats never need recomputing.
+        self._stats_cache: dict[tuple[str, str], FileStats | None] = {}
         # Rebuilding the list re-emits row selection; suppress the callback so
         # a refresh never looks like a user choosing a revision.
         self._suppress = False
@@ -166,12 +188,23 @@ class HistorySidebar(Gtk.Box):
         self._rebuild()
 
     def refresh_status(self) -> None:
-        """Update only the working-copy row's dot and label."""
+        """Update the working-copy row's dot, label, stats, and pin."""
 
         if self._repo is None or self._path is None:
             return
-        modified = git_history.is_modified(self._repo, self._path)
-        self._apply_status(modified)
+        self._modified = git_history.is_modified(self._repo, self._path)
+        self._apply_status(self._modified)
+        working_stats = self._stats_labels.get("working")
+        if working_stats is not None:
+            try:
+                stats = git_history.revision_stats(self._repo, self._path, WORKING_COPY)
+            except git_history.GitHistoryError:
+                # A transient read failure (e.g. the file vanished between the
+                # save event and this refresh) hides the label rather than
+                # crashing; a later refresh can recover it.
+                stats = None
+            self._set_stats(working_stats, stats)
+        self._update_pins()
 
     def _apply_status(self, modified: bool) -> None:
         if not hasattr(self, "_dot_label"):
@@ -193,6 +226,8 @@ class HistorySidebar(Gtk.Box):
         while (row := self._list.get_first_child()) is not None:
             self._list.remove(row)
         self._rows = {}
+        self._pin_buttons = {}
+        self._stats_labels = {}
 
         self._list.append(self._working_row())
 
@@ -200,12 +235,17 @@ class HistorySidebar(Gtk.Box):
         # deep "Show more" selection, refetched after the sidebar was hidden
         # and reshown). The window is still displaying it, so the list must
         # still visibly indicate it rather than silently falling back to
-        # "Working copy" while a historic revision is on screen.
+        # "Working copy" while a historic revision is on screen. A pinned
+        # off-page commit is kept too, so its pin button stays reachable.
         loaded = {commit.sha for commit in self._commits}
-        extras = [
-            revision for revision in (self._selected,)
-            if isinstance(revision, Commit) and revision.sha not in loaded
-        ]
+        extras: list[Commit] = []
+        for revision in (self._selected, self._pinned):
+            if (
+                isinstance(revision, Commit)
+                and revision.sha not in loaded
+                and revision not in extras
+            ):
+                extras.append(revision)
         for commit in extras + self._commits:
             self._list.append(self._commit_row(commit))
         if self._message is not None:
@@ -221,6 +261,8 @@ class HistorySidebar(Gtk.Box):
         self._suppress = False
         if self._repo is not None and self._path is not None:
             self.refresh_status()
+        else:
+            self._update_pins()
 
     def _working_row(self) -> Gtk.ListBoxRow:
         row = Gtk.ListBoxRow()
@@ -232,8 +274,12 @@ class HistorySidebar(Gtk.Box):
         box.set_margin_start(10)
         box.set_margin_end(10)
 
+        top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         title = Gtk.Label(label="Working copy", xalign=0.0)
         title.add_css_class("heading")
+        title.set_hexpand(True)
+        top.append(title)
+        top.append(self._pin_button(WORKING_COPY))
 
         status_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         self._dot_label = Gtk.Label(label="●")
@@ -243,8 +289,9 @@ class HistorySidebar(Gtk.Box):
         status_box.append(self._dot_label)
         status_box.append(self._status_label)
 
-        box.append(title)
+        box.append(top)
         box.append(status_box)
+        box.append(self._stats_label("working", None))
         row.set_child(box)
         self._rows["working"] = row
         return row
@@ -267,6 +314,7 @@ class HistorySidebar(Gtk.Box):
         when.set_hexpand(True)
         top.append(sha)
         top.append(when)
+        top.append(self._pin_button(commit))
 
         summary = Gtk.Label(label=commit.summary or "(no message)", xalign=0.0)
         summary.set_ellipsize(Pango.EllipsizeMode.END)
@@ -274,9 +322,48 @@ class HistorySidebar(Gtk.Box):
 
         box.append(top)
         box.append(summary)
+        box.append(self._stats_label(commit.sha, self._commit_stats(commit)))
         row.set_child(box)
         self._rows[commit.sha] = row
         return row
+
+    def _pin_button(self, revision: Revision) -> Gtk.Button:
+        button = Gtk.Button(icon_name="view-pin-symbolic")
+        button.add_css_class("flat")
+        button.add_css_class("mdprev-pin")
+        button.set_valign(Gtk.Align.CENTER)
+        # Hidden until _update_pins decides there is something to compare.
+        button.set_visible(False)
+        button.connect("clicked", lambda _button: self._pin_clicked(revision))
+        self._pin_buttons[_key(revision)] = button
+        return button
+
+    def _stats_label(self, key: str, stats: FileStats | None) -> Gtk.Label:
+        label = Gtk.Label(xalign=0.0)
+        label.add_css_class("dim-label")
+        label.add_css_class("caption")
+        self._set_stats(label, stats)
+        self._stats_labels[key] = label
+        return label
+
+    @staticmethod
+    def _set_stats(label: Gtk.Label, stats: FileStats | None) -> None:
+        # Binary or undecodable content has no meaningful counts; omit the line.
+        label.set_visible(stats is not None)
+        label.set_text(format_stats(stats) if stats is not None else "")
+
+    def _commit_stats(self, commit: Commit) -> FileStats | None:
+        key = (commit.sha, commit.path)
+        if key not in self._stats_cache:
+            try:
+                stats = git_history.revision_stats(self._repo, self._path, commit)
+            except git_history.GitHistoryError:
+                # Not cached: an unknown revision or a transient read failure
+                # may succeed on a later rebuild, unlike a genuine binary or
+                # absent result (which revision_stats itself returns as None).
+                return None
+            self._stats_cache[key] = stats
+        return self._stats_cache[key]
 
     def _message_row(self, text: str) -> Gtk.ListBoxRow:
         row = Gtk.ListBoxRow()
@@ -314,7 +401,57 @@ class HistorySidebar(Gtk.Box):
         self._emit()
 
     def _emit(self) -> None:
-        self._on_select(self._selected, None, self._mode)
+        pinned = self._pinned
+        base = pinned if pinned is not None and pinned != self._selected else None
+        self._shown_base = base
+        self._on_select(self._selected, base, self._mode)
+
+    def _pin_clicked(self, revision: Revision) -> None:
+        self._pinned = None if self._pinned == revision else revision
+        self._update_pins()
+        self._base_changed()
+
+    def _update_pins(self) -> None:
+        """Show pins only where a comparison is possible; drop an invalid pin."""
+
+        available = pins_available(
+            len(self._commits), self._cursor is not None, self._modified
+        )
+        pinned = self._pinned
+        if pinned is not None and (
+            not available or (isinstance(pinned, WorkingCopy) and not self._modified)
+        ):
+            self._pinned = pinned = None
+        pinned_key = _key(pinned) if pinned is not None else None
+        for key, button in self._pin_buttons.items():
+            button.set_visible(available and (key != "working" or self._modified))
+            active = key == pinned_key
+            if active:
+                button.add_css_class("mdprev-pin-active")
+            else:
+                button.remove_css_class("mdprev-pin-active")
+            text = (
+                "Stop comparing from this version" if active
+                else "Compare from this version"
+            )
+            button.set_tooltip_text(text)
+            button.update_property([Gtk.AccessibleProperty.LABEL], [text])
+        self._base_changed()
+
+    def _base_changed(self) -> None:
+        # Pinning alone never changes the view, but a comparison on screen
+        # whose base was unpinned must not keep showing that base.
+        if self._pinned is None and self._shown_base is not None and not self._suppress:
+            self._emit()
+
+    def clear_pin(self) -> bool:
+        """Unpin the base, as Escape does; report whether there was one."""
+
+        if self._pinned is None:
+            return False
+        self._pinned = None
+        self._update_pins()
+        return True
 
     def select_working_copy(self) -> None:
         """Return to the working copy, as Escape and sidebar-close do."""
