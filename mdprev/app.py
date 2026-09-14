@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 import sys
 from urllib.parse import unquote, urlparse
@@ -25,6 +26,40 @@ from .sidebar import HistorySidebar  # noqa: E402
 
 
 APP_ID = "io.github.yszhangit.mdprev"
+
+
+def choice_row(
+    choices: list[tuple[str, str, str | None]],
+    current: str,
+    on_change: Callable[[str], None],
+) -> Gtk.Box:
+    """Return a linked row of toggle buttons with exactly one active.
+
+    Used inside the display-options popover instead of Gtk.DropDown: a
+    dropdown's own popup nested in that popover leaves the popover unable to
+    close on clicks inside the window on Wayland (GTK #4369).
+    """
+
+    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+    row.add_css_class("linked")
+    row.set_homogeneous(True)
+    group = None
+    for key, label, tooltip in choices:
+        button = Gtk.ToggleButton(label=label)
+        if tooltip:
+            button.set_tooltip_text(tooltip)
+        if group is None:
+            group = button
+        else:
+            button.set_group(group)
+        button.set_active(key == current)
+        # Connected after set_active so building the row reports nothing.
+        button.connect(
+            "toggled",
+            lambda b, key=key: on_change(key) if b.get_active() else None,
+        )
+        row.append(button)
+    return row
 
 
 class PreviewWindow(Gtk.ApplicationWindow):
@@ -130,34 +165,32 @@ class PreviewWindow(Gtk.ApplicationWindow):
         font_label.add_css_class("heading")
         box.append(font_label)
 
-        font_dropdown = Gtk.DropDown.new_from_strings([
-            "Default (System UI)",
-            "Ubuntu / Cantarell (Sans)",
-            "DejaVu / Noto (Serif)",
-            "Ubuntu Mono (Monospace)",
-        ])
-        font_keys = ["system", "sans", "serif", "mono"]
-        if self._font in font_keys:
-            font_dropdown.set_selected(font_keys.index(self._font))
-        font_dropdown.connect("notify::selected", self._on_font_selected, font_keys)
-        box.append(font_dropdown)
+        box.append(choice_row(
+            [
+                ("system", "System", "Default (System UI)"),
+                ("sans", "Sans", "Ubuntu / Cantarell"),
+                ("serif", "Serif", "DejaVu / Noto Serif"),
+                ("mono", "Mono", "Ubuntu Mono"),
+            ],
+            self._font,
+            self._on_font_selected,
+        ))
 
         # Theme Controls
         theme_label = Gtk.Label(label="Theme", xalign=0.0)
         theme_label.add_css_class("heading")
         box.append(theme_label)
 
-        theme_dropdown = Gtk.DropDown.new_from_strings([
-            "System (Auto)",
-            "Light",
-            "Dark",
-            "Sepia",
-        ])
-        theme_keys = ["system", "light", "dark", "sepia"]
-        if self._theme in theme_keys:
-            theme_dropdown.set_selected(theme_keys.index(self._theme))
-        theme_dropdown.connect("notify::selected", self._on_theme_selected, theme_keys)
-        box.append(theme_dropdown)
+        box.append(choice_row(
+            [
+                ("system", "System", "Follow the system style"),
+                ("light", "Light", None),
+                ("dark", "Dark", None),
+                ("sepia", "Sepia", None),
+            ],
+            self._theme,
+            self._on_theme_selected,
+        ))
 
         self._popover = popover
         popover.set_child(box)
@@ -235,29 +268,17 @@ class PreviewWindow(Gtk.ApplicationWindow):
         self._update_zoom_label(1.0)
         save_preferences(zoom_level=1.0)
 
-    def _on_font_selected(self, dropdown, _param, font_keys: list[str]) -> None:
-        idx = dropdown.get_selected()
-        if 0 <= idx < len(font_keys):
-            new_font = font_keys[idx]
-            if new_font != self._font:
-                self._font = new_font
-                save_preferences(font=new_font)
-                self.refresh_document()
-                # Ensure the display options popover stays open
-                if hasattr(self, "_popover") and self._popover:
-                    self._popover.popup()
+    def _on_font_selected(self, font: str) -> None:
+        if font != self._font:
+            self._font = font
+            save_preferences(font=font)
+            self.refresh_document()
 
-    def _on_theme_selected(self, dropdown, _param, theme_keys: list[str]) -> None:
-        idx = dropdown.get_selected()
-        if 0 <= idx < len(theme_keys):
-            new_theme = theme_keys[idx]
-            if new_theme != self._theme:
-                self._theme = new_theme
-                save_preferences(theme=new_theme)
-                self.refresh_document()
-                # Ensure the display options popover stays open
-                if hasattr(self, "_popover") and self._popover:
-                    self._popover.popup()
+    def _on_theme_selected(self, theme: str) -> None:
+        if theme != self._theme:
+            self._theme = theme
+            save_preferences(theme=theme)
+            self.refresh_document()
 
     def _sidebar_toggled(self, button: Gtk.ToggleButton) -> None:
         self._set_sidebar_visible(button.get_active())
