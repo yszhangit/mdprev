@@ -403,10 +403,12 @@ equivalents below; the safety rules in section 3.4 apply unchanged.
 | Files "Open With", `.desktop` entry, MIME types | Finder "Open With", `CFBundleDocumentTypes` for `net.daringfireball.markdown` |
 | `xdg-mime default …` | Finder Get Info, "Open with", "Change All…" |
 | `Gio.FileMonitor` | kqueue (or FSEvents) with the same debounce and replacement recovery |
-| WebKitGTK 6.0 | `WKWebView`, page JavaScript disabled |
-| Header bar and popover | Window toolbar and popover |
+| WebKitGTK 6.0, HTML loaded from a string | `WKWebView`, page JavaScript disabled; HTML loaded from a per-window temporary file, because `WKWebView` grants local image access only to file loads |
+| Header bar and display-options popover | View menu (Zoom, Font, Theme) and a History toolbar button |
 | GNOME light/dark preference | macOS appearance (light/dark) |
-| `Ctrl` shortcuts | `Cmd` shortcuts; `Escape` unchanged |
+| `Ctrl`+`+`/`-`/`0` zoom | `Cmd`+`=`/`-`/`0` |
+| `Ctrl`+`H` history sidebar | `Ctrl`+`Cmd`+`S` (the macOS sidebar convention; `Cmd`+`H` hides the app) |
+| `Escape` (no menu item) | `Escape`, also View > Back to Working Copy |
 | `~/.config/mdprev/preferences.json` | `~/Library/Application Support/MdPrev/preferences.json` |
 | Ubuntu packages, `install.sh` | `MdPrev.app` built with py2app; `cmark-gfm` from Homebrew |
 
@@ -418,11 +420,12 @@ front ends provide it, or when the table below records the gap.
 
 | Feature | Linux | macOS |
 |---|---|---|
-| MVP 1: display, live reload, safety, installation | Done | Planned |
-| MVP 2: syntax highlighting | Done | Planned |
-| MVP 3: font, theme, zoom | Done | Planned |
-| MVP 4: git history sidebar | Done | Planned |
-| MVP 5: revision comparison | Done | Planned |
+| MVP 1: display, live reload, safety | Done | Done |
+| MVP 1: installation, Finder / "Open With" | Done | Planned (needs the app bundle) |
+| MVP 2: syntax highlighting | Done | Done |
+| MVP 3: font, theme, zoom | Done | Done |
+| MVP 4: git history sidebar | Done | Done |
+| MVP 5: revision comparison | Done | Done |
 
 ### 10.3 macOS acceptance criteria
 
