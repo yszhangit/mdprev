@@ -17,8 +17,9 @@ gi.require_version("Pango", "1.0")
 from gi.repository import Gdk, Gtk, Pango  # noqa: E402
 
 from ..core import git_history  # noqa: E402
-from ..core.diffmodel import FileStats, format_stats, pins_available  # noqa: E402
+from ..core.diffmodel import FileStats, format_stats  # noqa: E402
 from ..core.git_history import WORKING_COPY, Commit, Revision, WorkingCopy  # noqa: E402
+from ..core.history_state import MODES, HistorySelection  # noqa: E402
 
 
 # The application has no other GTK-level styling; all document styling lives
@@ -54,8 +55,6 @@ _CSS = b"""
 
 _CSS_INSTALLED = False
 
-_MODES = (("rendered", "Rendered"), ("diff", "Diff"), ("side-by-side", "Side by side"))
-
 
 def install_css() -> None:
     """Register the sidebar's style classes once on the default display."""
@@ -90,14 +89,8 @@ class HistorySidebar(Gtk.Box):
         self._cursor = None
         self._truncated = False
         self._message: str | None = None
-        self._mode = "rendered"
-        self._selected: Revision = WORKING_COPY
+        self._state = HistorySelection()
         self._rows: dict[str, Gtk.ListBoxRow] = {}
-        # The pin is what the reader chose to compare from; the shown base is
-        # what the window was last told, which lags while a new pin awaits a
-        # selection (pinning alone never changes the view).
-        self._pinned: Revision | None = None
-        self._shown_base: Revision | None = None
         self._modified = False
         self._pin_buttons: dict[str, Gtk.Button] = {}
         self._stats_labels: dict[str, Gtk.Label] = {}
@@ -129,11 +122,11 @@ class HistorySidebar(Gtk.Box):
         box.set_homogeneous(True)
 
         self._mode_buttons: list[Gtk.ToggleButton] = []
-        for mode, label in _MODES:
+        for mode, label in MODES:
             button = Gtk.ToggleButton(label=label)
             if self._mode_buttons:
                 button.set_group(self._mode_buttons[0])
-            button.set_active(mode == self._mode)
+            button.set_active(mode == self._state.mode)
             button.connect("toggled", self._mode_toggled, mode)
             box.append(button)
             self._mode_buttons.append(button)
@@ -141,9 +134,8 @@ class HistorySidebar(Gtk.Box):
 
     def _mode_toggled(self, button: Gtk.ToggleButton, mode: str) -> None:
         # Each group change toggles two buttons; only the newly active one counts.
-        if not button.get_active() or mode == self._mode:
+        if not button.get_active() or not self._state.set_mode(mode):
             return
-        self._mode = mode
         self._emit()
 
     # -- loading ---------------------------------------------------------
@@ -239,7 +231,7 @@ class HistorySidebar(Gtk.Box):
         # off-page commit is kept too, so its pin button stays reachable.
         loaded = {commit.sha for commit in self._commits}
         extras: list[Commit] = []
-        for revision in (self._selected, self._pinned):
+        for revision in (self._state.selected, self._state.pinned):
             if (
                 isinstance(revision, Commit)
                 and revision.sha not in loaded
@@ -257,7 +249,9 @@ class HistorySidebar(Gtk.Box):
         if self._cursor is not None:
             self._list.append(self._action_row("Show more", self._load_more))
 
-        self._list.select_row(self._rows.get(_key(self._selected), self._rows["working"]))
+        self._list.select_row(
+            self._rows.get(_key(self._state.selected), self._rows["working"])
+        )
         self._suppress = False
         if self._repo is not None and self._path is not None:
             self.refresh_status()
@@ -334,6 +328,7 @@ class HistorySidebar(Gtk.Box):
         button.set_valign(Gtk.Align.CENTER)
         # Hidden until _update_pins decides there is something to compare.
         button.set_visible(False)
+        button.revision = revision
         button.connect("clicked", lambda _button: self._pin_clicked(revision))
         self._pin_buttons[_key(revision)] = button
         return button
@@ -397,34 +392,26 @@ class HistorySidebar(Gtk.Box):
         revision = getattr(row, "revision", None)
         if revision is None:
             return
-        self._selected = revision
+        self._state.select(revision)
         self._emit()
 
     def _emit(self) -> None:
-        pinned = self._pinned
-        base = pinned if pinned is not None and pinned != self._selected else None
-        self._shown_base = base
-        self._on_select(self._selected, base, self._mode)
+        self._on_select(*self._state.emit())
 
     def _pin_clicked(self, revision: Revision) -> None:
-        self._pinned = None if self._pinned == revision else revision
+        self._state.toggle_pin(revision)
         self._update_pins()
-        self._base_changed()
 
     def _update_pins(self) -> None:
         """Show pins only where a comparison is possible; drop an invalid pin."""
 
-        available = pins_available(
+        must_emit = self._state.update(
             len(self._commits), self._cursor is not None, self._modified
         )
-        pinned = self._pinned
-        if pinned is not None and (
-            not available or (isinstance(pinned, WorkingCopy) and not self._modified)
-        ):
-            self._pinned = pinned = None
+        pinned = self._state.pinned
         pinned_key = _key(pinned) if pinned is not None else None
         for key, button in self._pin_buttons.items():
-            button.set_visible(available and (key != "working" or self._modified))
+            button.set_visible(self._state.pin_visible(button.revision))
             active = key == pinned_key
             if active:
                 button.add_css_class("mdprev-pin-active")
@@ -436,33 +423,27 @@ class HistorySidebar(Gtk.Box):
             )
             button.set_tooltip_text(text)
             button.update_property([Gtk.AccessibleProperty.LABEL], [text])
-        self._base_changed()
-
-    def _base_changed(self) -> None:
-        # Pinning alone never changes the view, but a comparison on screen
-        # whose base was unpinned must not keep showing that base.
-        if self._pinned is None and self._shown_base is not None and not self._suppress:
+        if must_emit:
             self._emit()
 
     def clear_pin(self) -> bool:
         """Unpin the base, as Escape does; report whether there was one."""
 
-        if self._pinned is None:
+        if not self._state.clear_pin():
             return False
-        self._pinned = None
         self._update_pins()
         return True
 
     def select_working_copy(self) -> None:
         """Return to the working copy, as Escape and sidebar-close do."""
 
-        # No guard on self._selected here: the caller (PreviewWindow) is the
-        # authority on whether a historic revision is on screen, and it only
-        # calls this when one is. Bailing out early based on self._selected
-        # alone would repeat the desync this method exists to correct: this
-        # field can legitimately be out of step with what the window is
+        # No guard on the selected revision here: the caller (PreviewWindow)
+        # is the authority on whether a historic revision is on screen, and it
+        # only calls this when one is. Bailing out early based on the selection
+        # alone would repeat the desync this method exists to correct: the
+        # selection can legitimately be out of step with what the window is
         # displaying (see _rebuild), and skipping the callback in that case
         # would leave a historic revision on screen with nothing selected.
-        self._selected = WORKING_COPY
+        self._state.select(WORKING_COPY)
         self._rebuild()
         self._emit()

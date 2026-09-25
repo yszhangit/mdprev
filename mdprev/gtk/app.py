@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 import sys
-from urllib.parse import unquote, urlparse
 
 import gi
 gi.require_version("Gtk", "4.0")
@@ -14,14 +13,18 @@ gi.require_version("WebKit", "6.0")
 from gi.repository import Gio, GLib, Gtk, Pango, WebKit  # noqa: E402
 
 from ..core import git_history  # noqa: E402
-from ..core.git_history import WORKING_COPY, Commit, Revision  # noqa: E402
+from ..core.git_history import WORKING_COPY, Revision  # noqa: E402
+from ..core.navigation import Allow, OpenDocument, OpenExternal, classify_link  # noqa: E402
 from ..core.preferences import load_preferences, save_preferences  # noqa: E402
-from ..core.render import (  # noqa: E402
-    RenderError,
-    error_document,
-    read_source,
-    render_comparison,
-    render_markdown,
+from ..core.session import (  # noqa: E402
+    DEFAULT_ZOOM,
+    base_uri,
+    build_html,
+    reloads_on_save,
+    view_changed,
+    window_titles,
+    zoom_in,
+    zoom_out,
 )
 from .sidebar import HistorySidebar  # noqa: E402
 
@@ -61,57 +64,6 @@ def choice_row(
         )
         row.append(button)
     return row
-
-
-def _short(revision: Revision) -> str:
-    return revision.short_sha if isinstance(revision, Commit) else "Working copy"
-
-
-def window_titles(
-    name: str, target: Revision, base: Revision | None, mode: str
-) -> tuple[str, str | None]:
-    """Return the window title and header subtitle (None hides it)."""
-
-    if base is not None and mode != "rendered":
-        pair = f"{_short(base)} → {_short(target)}"
-        return f"{name} — {pair}", pair
-    if isinstance(target, Commit):
-        return (
-            f"{name} — {target.short_sha}",
-            f"{target.short_sha} · {target.when.strftime('%b %-d, %Y')}",
-        )
-    return name, None
-
-
-def view_changed(
-    old_target: Revision,
-    old_base: Revision | None,
-    target: Revision,
-    base: Revision | None,
-    mode: str,
-) -> bool:
-    """True when the displayed document differs, so scroll must reset.
-
-    Rendered mode shows only the target, so a base-only change there is not a
-    document change.  A pure mode change (target and base both unchanged)
-    always returns False; the caller re-renders in place for that case.
-    """
-
-    if target != old_target:
-        return True
-    return mode != "rendered" and base != old_base
-
-
-def reloads_on_save(target: Revision, base: Revision | None, mode: str) -> bool:
-    """True when a save to the working copy should refresh what is on screen.
-
-    Rendered mode shows only the target, so a working-copy base is irrelevant
-    there; diff and side-by-side show both sides.
-    """
-
-    if target == WORKING_COPY:
-        return True
-    return mode != "rendered" and base == WORKING_COPY
 
 
 class PreviewWindow(Gtk.ApplicationWindow):
@@ -304,23 +256,21 @@ class PreviewWindow(Gtk.ApplicationWindow):
             self._zoom_reset_btn.set_label(f"{pct}%")
 
     def _zoom_in(self) -> None:
-        level = self._webview.get_zoom_level()
-        new_level = min(level + 0.1, 3.0)
+        new_level = zoom_in(self._webview.get_zoom_level())
         self._webview.set_zoom_level(new_level)
         self._update_zoom_label(new_level)
         save_preferences(zoom_level=new_level)
 
     def _zoom_out(self) -> None:
-        level = self._webview.get_zoom_level()
-        new_level = max(level - 0.1, 0.5)
+        new_level = zoom_out(self._webview.get_zoom_level())
         self._webview.set_zoom_level(new_level)
         self._update_zoom_label(new_level)
         save_preferences(zoom_level=new_level)
 
     def _zoom_reset(self) -> None:
-        self._webview.set_zoom_level(1.0)
-        self._update_zoom_label(1.0)
-        save_preferences(zoom_level=1.0)
+        self._webview.set_zoom_level(DEFAULT_ZOOM)
+        self._update_zoom_label(DEFAULT_ZOOM)
+        save_preferences(zoom_level=DEFAULT_ZOOM)
 
     def _on_font_selected(self, font: str) -> None:
         if font != self._font:
@@ -457,33 +407,12 @@ class PreviewWindow(Gtk.ApplicationWindow):
     def load_document(self, restore_scroll_y: float | None = None) -> None:
         self._title_label.set_text(self.path.name)
         self._update_titles()
-        try:
-            if self._mode != "rendered" and self._repo is not None:
-                comparison = git_history.compare(
-                    self._repo, self.path, self._base, self._target
-                )
-                html = render_comparison(
-                    comparison, self._mode, font=self._font, theme=self._theme
-                )
-            elif isinstance(self._target, Commit):
-                source = git_history.file_at(
-                    self._repo, self._target.sha, self._target.path
-                )
-                html = render_markdown(
-                    source, self.path.parent, font=self._font, theme=self._theme
-                )
-            else:
-                source = read_source(self.path)
-                html = render_markdown(
-                    source, self.path.parent, font=self._font, theme=self._theme
-                )
-        except (RenderError, git_history.GitHistoryError) as exc:
-            html = error_document(str(exc), font=self._font, theme=self._theme)
-        base_uri = self.path.parent.as_uri()
-        if not base_uri.endswith("/"):
-            base_uri += "/"
+        html = build_html(
+            self.path, self._repo, self._target, self._base, self._mode,
+            self._font, self._theme,
+        )
         self._pending_scroll_y = restore_scroll_y
-        self._webview.load_html(html, base_uri)
+        self._webview.load_html(html, base_uri(self.path))
 
     def _load_changed(self, webview, event) -> None:
         if event != WebKit.LoadEvent.FINISHED or self._pending_scroll_y is None:
@@ -510,36 +439,17 @@ class PreviewWindow(Gtk.ApplicationWindow):
         action = decision.get_navigation_action()
         request = action.get_request() if action else None
         uri = request.get_uri() if request else ""
-        parsed = urlparse(uri)
-        if parsed.scheme.lower() in {"http", "https", "mailto"}:
-            if action and action.is_user_gesture():
-                Gio.AppInfo.launch_default_for_uri(uri, None)
-            decision.ignore()
-            return True
-        if parsed.scheme.lower() == "file":
-            target = Path(unquote(parsed.path)).resolve()
-            # load_html() reports its document base URI as a non-user file
-            # navigation.  It must be allowed or WebKit displays a blank page.
-            if (
-                action
-                and not action.is_user_gesture()
-                and target == self.path.parent.resolve()
-            ):
-                return False
-            # Fragment-only links resolve against the HTML base directory.
-            if parsed.fragment and target == self.path.parent.resolve():
-                return False
-            if target.suffix.lower() in {".md", ".markdown"}:
-                if action and action.is_user_gesture():
-                    self.app._open_path(target)
-                decision.ignore()
-                return True
-            decision.ignore()
-            return True
-        if parsed.scheme.lower() in {"javascript", "data"}:
-            decision.ignore()
-            return True
-        return False
+        decision_kind = classify_link(
+            uri, self.path.parent, bool(action and action.is_user_gesture())
+        )
+        if isinstance(decision_kind, Allow):
+            return False
+        if isinstance(decision_kind, OpenExternal):
+            Gio.AppInfo.launch_default_for_uri(decision_kind.uri, None)
+        elif isinstance(decision_kind, OpenDocument):
+            self.app._open_path(decision_kind.path)
+        decision.ignore()
+        return True
 
     def close_request(self) -> bool:
         if self._monitor:
