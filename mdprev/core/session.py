@@ -8,6 +8,7 @@ front end only wires them to its widgets.
 
 from __future__ import annotations
 
+from html import escape
 from pathlib import Path
 
 from . import git_history
@@ -117,3 +118,13 @@ def base_uri(path: Path) -> str:
 
     uri = path.parent.as_uri()
     return uri if uri.endswith("/") else uri + "/"
+
+
+def with_base_href(html: str, uri: str) -> str:
+    """Insert <base href=uri> so a page loaded from elsewhere resolves as if
+    it had been loaded at uri (used where the web view cannot load HTML from a
+    string with local file access)."""
+
+    head = "<head>"
+    index = html.index(head) + len(head)
+    return f'{html[:index]}<base href="{escape(uri)}">{html[index:]}'

@@ -114,3 +114,16 @@ def test_base_uri_is_the_document_directory_with_a_trailing_slash(tmp_path):
     uri = session.base_uri(tmp_path / "doc.md")
 
     assert uri == tmp_path.as_uri() + "/"
+
+
+def test_with_base_href_goes_first_in_head(tmp_path):
+    doc = tmp_path / "a \"q\" é" / "doc.md"
+    doc.parent.mkdir()
+    doc.write_text("# T\n", encoding="utf-8")
+    html = session.build_html(doc, None, WORKING_COPY, None, "rendered", "system", "system")
+
+    based = session.with_base_href(html, session.base_uri(doc))
+
+    head = based.index("<head>") + len("<head>")
+    assert based[head:].startswith(f'<base href="{session.base_uri(doc)}">')
+    assert based.count("<base ") == 1

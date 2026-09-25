@@ -16,10 +16,9 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Pango", "1.0")
 from gi.repository import Gdk, Gtk, Pango  # noqa: E402
 
-from ..core import git_history  # noqa: E402
 from ..core.diffmodel import FileStats, format_stats  # noqa: E402
-from ..core.git_history import WORKING_COPY, Commit, Revision, WorkingCopy  # noqa: E402
-from ..core.history_state import MODES, HistorySelection  # noqa: E402
+from ..core.git_history import WORKING_COPY, Commit, Revision  # noqa: E402
+from ..core.history_state import MODES, HistoryModel, revision_key as _key  # noqa: E402
 
 
 # The application has no other GTK-level styling; all document styling lives
@@ -73,29 +72,16 @@ def install_css() -> None:
     _CSS_INSTALLED = True
 
 
-def _key(revision: Revision) -> str:
-    return "working" if isinstance(revision, WorkingCopy) else revision.sha
-
-
 class HistorySidebar(Gtk.Box):
     def __init__(self, on_select: Callable[[Revision, Revision | None, str], None]):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         install_css()
         self._on_select = on_select
-        self._repo = None
-        self._path: Path | None = None
-        self._limit = 10
-        self._commits: list[Commit] = []
-        self._cursor = None
-        self._truncated = False
-        self._message: str | None = None
-        self._state = HistorySelection()
+        self._model = HistoryModel()
+        self._state = self._model.selection
         self._rows: dict[str, Gtk.ListBoxRow] = {}
-        self._modified = False
         self._pin_buttons: dict[str, Gtk.Button] = {}
         self._stats_labels: dict[str, Gtk.Label] = {}
-        # Commits are immutable, so their stats never need recomputing.
-        self._stats_cache: dict[tuple[str, str], FileStats | None] = {}
         # Rebuilding the list re-emits row selection; suppress the callback so
         # a refresh never looks like a user choosing a revision.
         self._suppress = False
@@ -143,59 +129,23 @@ class HistorySidebar(Gtk.Box):
     def load(self, repo, path: Path, limit: int) -> None:
         """Query history for path and rebuild the list."""
 
-        self._repo = repo
-        self._path = path
-        self._limit = limit
-        self._commits = []
-        self._cursor = None
-        self._truncated = False
-        self._message = None
-        if repo is None:
-            self._message = "Not in a git repository"
-        elif not git_history.is_tracked(repo, path):
-            self._message = "Not tracked in this repository"
-        else:
-            self._fetch(after=None)
+        self._model.load(repo, path, limit)
         self._rebuild()
 
-    def _fetch(self, after) -> None:
-        try:
-            result = git_history.history(
-                self._repo, self._path, limit=self._limit, after=after
-            )
-        except git_history.GitHistoryError as exc:
-            self._message = str(exc)
-            return
-        self._commits.extend(result.commits)
-        self._cursor = result.next_cursor
-        self._truncated = result.truncated
-        if not self._commits and self._message is None:
-            if self._repo.head_is_unborn:
-                self._message = "No commits yet"
-            else:
-                self._message = "No history for this file"
-
     def _load_more(self) -> None:
-        self._fetch(after=self._cursor)
+        self._model.load_more()
         self._rebuild()
 
     def refresh_status(self) -> None:
         """Update the working-copy row's dot, label, stats, and pin."""
 
-        if self._repo is None or self._path is None:
+        if not self._model.has_repository:
             return
-        self._modified = git_history.is_modified(self._repo, self._path)
-        self._apply_status(self._modified)
+        self._model.refresh_status()
+        self._apply_status(self._model.modified)
         working_stats = self._stats_labels.get("working")
         if working_stats is not None:
-            try:
-                stats = git_history.revision_stats(self._repo, self._path, WORKING_COPY)
-            except git_history.GitHistoryError:
-                # A transient read failure (e.g. the file vanished between the
-                # save event and this refresh) hides the label rather than
-                # crashing; a later refresh can recover it.
-                stats = None
-            self._set_stats(working_stats, stats)
+            self._set_stats(working_stats, self._model.working_stats())
         self._update_pins()
 
     def _apply_status(self, modified: bool) -> None:
@@ -221,39 +171,21 @@ class HistorySidebar(Gtk.Box):
         self._pin_buttons = {}
         self._stats_labels = {}
 
-        self._list.append(self._working_row())
-
-        # The selected commit can fall off the currently loaded page (e.g. a
-        # deep "Show more" selection, refetched after the sidebar was hidden
-        # and reshown). The window is still displaying it, so the list must
-        # still visibly indicate it rather than silently falling back to
-        # "Working copy" while a historic revision is on screen. A pinned
-        # off-page commit is kept too, so its pin button stays reachable.
-        loaded = {commit.sha for commit in self._commits}
-        extras: list[Commit] = []
-        for revision in (self._state.selected, self._state.pinned):
-            if (
-                isinstance(revision, Commit)
-                and revision.sha not in loaded
-                and revision not in extras
-            ):
-                extras.append(revision)
-        for commit in extras + self._commits:
-            self._list.append(self._commit_row(commit))
-        if self._message is not None:
-            self._list.append(self._message_row(self._message))
-        if self._truncated:
-            self._list.append(
-                self._message_row(f"History truncated after {git_history.MAX_SCAN} commits")
-            )
-        if self._cursor is not None:
-            self._list.append(self._action_row("Show more", self._load_more))
+        for row in self._model.rows():
+            if row.kind == "revision" and row.revision == WORKING_COPY:
+                self._list.append(self._working_row())
+            elif row.kind == "revision":
+                self._list.append(self._commit_row(row.revision))
+            elif row.kind == "message":
+                self._list.append(self._message_row(row.text))
+            else:
+                self._list.append(self._action_row(row.text, self._load_more))
 
         self._list.select_row(
             self._rows.get(_key(self._state.selected), self._rows["working"])
         )
         self._suppress = False
-        if self._repo is not None and self._path is not None:
+        if self._model.has_repository:
             self.refresh_status()
         else:
             self._update_pins()
@@ -316,7 +248,7 @@ class HistorySidebar(Gtk.Box):
 
         box.append(top)
         box.append(summary)
-        box.append(self._stats_label(commit.sha, self._commit_stats(commit)))
+        box.append(self._stats_label(commit.sha, self._model.commit_stats(commit)))
         row.set_child(box)
         self._rows[commit.sha] = row
         return row
@@ -346,19 +278,6 @@ class HistorySidebar(Gtk.Box):
         # Binary or undecodable content has no meaningful counts; omit the line.
         label.set_visible(stats is not None)
         label.set_text(format_stats(stats) if stats is not None else "")
-
-    def _commit_stats(self, commit: Commit) -> FileStats | None:
-        key = (commit.sha, commit.path)
-        if key not in self._stats_cache:
-            try:
-                stats = git_history.revision_stats(self._repo, self._path, commit)
-            except git_history.GitHistoryError:
-                # Not cached: an unknown revision or a transient read failure
-                # may succeed on a later rebuild, unlike a genuine binary or
-                # absent result (which revision_stats itself returns as None).
-                return None
-            self._stats_cache[key] = stats
-        return self._stats_cache[key]
 
     def _message_row(self, text: str) -> Gtk.ListBoxRow:
         row = Gtk.ListBoxRow()
@@ -405,9 +324,7 @@ class HistorySidebar(Gtk.Box):
     def _update_pins(self) -> None:
         """Show pins only where a comparison is possible; drop an invalid pin."""
 
-        must_emit = self._state.update(
-            len(self._commits), self._cursor is not None, self._modified
-        )
+        must_emit = self._model.update_pins()
         pinned = self._state.pinned
         pinned_key = _key(pinned) if pinned is not None else None
         for key, button in self._pin_buttons.items():
