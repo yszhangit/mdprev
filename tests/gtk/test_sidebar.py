@@ -4,8 +4,8 @@ import pytest
 
 pygit2 = pytest.importorskip("pygit2")
 
-from mdprev.git_history import WORKING_COPY  # noqa: E402
-from mdprev.sidebar import HistorySidebar  # noqa: E402
+from mdprev.core.git_history import WORKING_COPY  # noqa: E402
+from mdprev.gtk.sidebar import HistorySidebar  # noqa: E402
 
 
 def visible_pins(sidebar):
@@ -113,7 +113,7 @@ def test_pinning_alone_reports_nothing(repo):
 
     assert calls == []
     assert sidebar._pin_buttons[first].has_css_class("mdprev-pin-active")
-    assert sidebar._pinned.sha == first
+    assert sidebar._state.pinned.sha == first
 
 
 def test_selecting_another_row_compares_against_the_pin(repo):
@@ -163,7 +163,7 @@ def test_unpinning_the_base_on_screen_rerenders_without_it(repo):
 
     target, base, _mode = calls[-1]
     assert (target.sha, base) == (second, None)
-    assert sidebar._pinned is None
+    assert sidebar._state.pinned is None
 
 
 def test_unpinning_an_unused_pin_reports_nothing(repo):
@@ -188,7 +188,7 @@ def test_clear_pin(repo):
     sidebar._list.select_row(sidebar._rows[second])
     assert sidebar.clear_pin() is True
     assert calls[-1][1] is None
-    assert sidebar._pinned is None
+    assert sidebar._state.pinned is None
 
 
 def test_working_copy_pin_clears_when_the_file_matches_head_again(repo):
@@ -203,7 +203,7 @@ def test_working_copy_pin_clears_when_the_file_matches_head_again(repo):
     (workdir / "doc.md").write_text("one\n", encoding="utf-8")
     sidebar.refresh_status()
 
-    assert sidebar._pinned is None
+    assert sidebar._state.pinned is None
     assert calls[-1][1] is None
     assert visible_pins(sidebar) == set()
 

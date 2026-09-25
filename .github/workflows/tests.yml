@@ -1,0 +1,34 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux:
+    # Ubuntu 26.04 runners are not available yet; 24.04 ships the same
+    # GTK 4, WebKitGTK 6.0, cmark-gfm, and pygit2 packages.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Ubuntu packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmark-gfm gir1.2-gtk-4.0 gir1.2-webkit-6.0 python3-gi \
+            python3-pygments python3-pygit2 python3-pytest xvfb
+      - name: Run tests (core and GTK)
+        run: xvfb-run -a python3 -m pytest
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cmark-gfm
+        run: brew install cmark-gfm
+      - name: Create the virtual environment
+        run: |
+          python3 -m venv venv
+          venv/bin/pip install -r packaging/macos/requirements.txt
+      - name: Run tests (core; GTK tests are skipped)
+        run: venv/bin/pytest

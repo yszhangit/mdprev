@@ -1,11 +1,5 @@
-import pytest
+import importlib.util
 
-import gi
-gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk  # noqa: E402
-
-
-@pytest.fixture
-def gtk_display():
-    if not Gtk.init_check():
-        pytest.skip("no display available")
+# GTK front-end tests need PyGObject; skip the directory where it is absent
+# (e.g. macOS) so the toolkit-neutral core tests still run.
+collect_ignore = [] if importlib.util.find_spec("gi") else ["gtk"]

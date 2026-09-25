@@ -4,8 +4,8 @@ import re
 
 import pytest
 
-from mdprev import render
-from mdprev.render import RenderError, error_document, read_source, render_markdown, sanitize_fragment
+from mdprev.core import render
+from mdprev.core.render import RenderError, error_document, read_source, render_markdown, sanitize_fragment
 
 
 def test_gfm_features_and_complete_document(tmp_path: Path):
@@ -29,7 +29,7 @@ def _code_text(html: str) -> str:
 
 
 def test_every_supported_language_is_highlighted():
-    source = (Path(__file__).parent / "fixtures" / "highlighting.md").read_text()
+    source = (Path(__file__).parent.parent / "fixtures" / "highlighting.md").read_text()
     html = render_markdown(source)
     supported = {
         "bash", "python", "javascript", "typescript", "json", "yaml", "html",
@@ -200,7 +200,7 @@ def test_render_diff_does_not_invoke_cmark(monkeypatch):
     assert "+new" in unescape(re.sub(r"<[^>]+>", "", render.render_diff("@@ -1 +1 @@\n-old\n+new\n")))
 
 
-from mdprev.diffmodel import Comparison, DiffLine, FileStats, Hunk, Side  # noqa: E402
+from mdprev.core.diffmodel import Comparison, DiffLine, FileStats, Hunk, Side  # noqa: E402
 
 
 def make_comparison(**overrides):
@@ -478,3 +478,29 @@ def test_diff_palette_is_defined_for_every_theme():
         block = html.split(theme + " {", 1)[1].split("}", 1)[0]
         assert "--diff-del-bg" in block and "--diff-add-word" in block
     assert html.count("--diff-fold:") >= 5  # :root, system dark, light, dark, sepia
+
+
+def test_find_cmark_prefers_path(monkeypatch):
+    monkeypatch.setattr(render.shutil, "which", lambda name: "/usr/bin/cmark-gfm")
+
+    assert render.find_cmark() == "/usr/bin/cmark-gfm"
+
+
+def test_find_cmark_falls_back_to_known_install_locations(monkeypatch, tmp_path):
+    fallback = tmp_path / "cmark-gfm"
+    fallback.write_text("#!/bin/sh\n")
+    fallback.chmod(0o755)
+    monkeypatch.setattr(render.shutil, "which", lambda name: None)
+    monkeypatch.setattr(render, "_CMARK_FALLBACKS", (tmp_path / "absent", fallback))
+
+    assert render.find_cmark() == str(fallback)
+
+
+def test_find_cmark_leaves_a_missing_program_to_the_launch_error(monkeypatch, tmp_path):
+    monkeypatch.setattr(render.shutil, "which", lambda name: None)
+    monkeypatch.setattr(render, "_CMARK_FALLBACKS", (tmp_path / "absent",))
+    monkeypatch.setenv("PATH", str(tmp_path))
+
+    assert render.find_cmark() == "cmark-gfm"
+    with pytest.raises(RenderError, match="Unable to run cmark-gfm"):
+        render_markdown("text")

@@ -1,0 +1,13 @@
+# macOS development environment for MdPrev. Linux uses Ubuntu packages instead
+# (see README.md) and has no pip requirements.
+#
+#   brew install cmark-gfm
+#   /opt/homebrew/bin/python3.12 -m venv venv
+#   venv/bin/pip install -r packaging/macos/requirements.txt
+pyobjc-core
+pyobjc-framework-Cocoa
+pyobjc-framework-WebKit
+pygments
+pygit2
+pytest
+py2app

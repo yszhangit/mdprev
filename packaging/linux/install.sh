@@ -2,6 +2,7 @@
 set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_dir=$(CDPATH= cd -- "$script_dir/../.." && pwd)
 data_home=${XDG_DATA_HOME:-"$HOME/.local/share"}
 bin_home=${XDG_BIN_HOME:-"$HOME/.local/bin"}
 app_home="$data_home/mdprev"
@@ -10,8 +11,8 @@ icon_home="$data_home/icons/hicolor/scalable/apps"
 
 mkdir -p "$app_home" "$bin_home" "$desktop_home" "$icon_home"
 rm -rf "$app_home/mdprev"
-cp -R "$script_dir/mdprev" "$app_home/mdprev"
-cp "$script_dir/io.github.yszhangit.mdprev.svg" "$icon_home/io.github.yszhangit.mdprev.svg"
+cp -R "$repo_dir/mdprev" "$app_home/mdprev"
+cp "$repo_dir/packaging/io.github.yszhangit.mdprev.svg" "$icon_home/io.github.yszhangit.mdprev.svg"
 cp "$script_dir/bin/mdprev" "$bin_home/mdprev"
 chmod 755 "$bin_home/mdprev"
 

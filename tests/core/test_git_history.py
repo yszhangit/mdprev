@@ -8,8 +8,8 @@ import pytest
 
 pygit2 = pytest.importorskip("pygit2")
 
-from mdprev import git_history  # noqa: E402
-from mdprev.diffmodel import EMPTY_STATS, FileStats  # noqa: E402
+from mdprev.core import git_history  # noqa: E402
+from mdprev.core.diffmodel import EMPTY_STATS, FileStats  # noqa: E402
 
 
 def test_module_reports_pygit2_available():

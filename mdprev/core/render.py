@@ -1,8 +1,8 @@
 """Markdown rendering and safety filtering.
 
-The parser is deliberately kept outside the GTK application so that it can be
+The parser is deliberately kept outside the GUI front ends so that it can be
 tested without a display server.  cmark-gfm produces HTML, which is then
-filtered before it is handed to WebKit.
+filtered before it is handed to the web view.
 """
 
 from __future__ import annotations
@@ -10,8 +10,10 @@ from __future__ import annotations
 import difflib
 from html import escape, unescape
 from html.parser import HTMLParser
+import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import unicodedata
 from urllib.parse import unquote, urlparse
@@ -44,6 +46,9 @@ class RenderError(RuntimeError):
 
 
 _CMARK = "cmark-gfm"
+# Apps started from Finder or the Dock inherit a minimal PATH without
+# Homebrew, so its install location is tried when PATH has no cmark-gfm.
+_CMARK_FALLBACKS = (Path("/opt/homebrew/bin/cmark-gfm"),)
 _EXTENSIONS = ("table", "tasklist", "strikethrough", "autolink", "tagfilter")
 _TAGS = {
     "a", "blockquote", "br", "code", "del", "em", "h1", "h2", "h3",
@@ -225,6 +230,22 @@ _THEMES = {
 }
 
 
+def find_cmark() -> str:
+    """Return the cmark-gfm executable to run.
+
+    Falls back to the bare name so a missing program is reported by the
+    subprocess call like any other launch failure.
+    """
+
+    found = shutil.which(_CMARK)
+    if found:
+        return found
+    for candidate in _CMARK_FALLBACKS:
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return _CMARK
+
+
 def render_markdown(
     source: str,
     document_dir: Path | None = None,
@@ -233,7 +254,7 @@ def render_markdown(
 ) -> str:
     """Return a complete safe HTML document for Markdown source."""
 
-    command = [_CMARK, "--to", "html"]
+    command = [find_cmark(), "--to", "html"]
     for extension in _EXTENSIONS:
         command.extend(("--extension", extension))
     try:

@@ -2,7 +2,7 @@
 
 import pytest
 
-from mdprev.diffmodel import (
+from mdprev.core.diffmodel import (
     EMPTY_STATS,
     Comparison,
     FileStats,
