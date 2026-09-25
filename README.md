@@ -14,7 +14,7 @@ sudo apt install cmark-gfm gir1.2-gtk-4.0 gir1.2-webkit-6.0 python3-pygments pyt
 Then install MdPrev for the current user:
 
 ```sh
-./install.sh
+packaging/linux/install.sh
 ```
 
 Open a Markdown file from Files' **Open With** menu, or run:
@@ -80,7 +80,7 @@ sidebar is unavailable.
 ## Uninstall
 
 ```sh
-./uninstall.sh
+packaging/linux/uninstall.sh
 ```
 
 ## License
