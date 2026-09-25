@@ -1,4 +1,4 @@
-import mdprev.app as app_module
+import mdprev.gtk.app as app_module
 from gi.repository import Gtk
 
 
@@ -61,7 +61,7 @@ def test_main_forwards_process_arguments(monkeypatch):
 
 from datetime import datetime, timezone  # noqa: E402
 
-from mdprev.git_history import WORKING_COPY, Commit  # noqa: E402
+from mdprev.core.git_history import WORKING_COPY, Commit  # noqa: E402
 
 
 def _commit(sha="a1b2c3d" + "0" * 33):

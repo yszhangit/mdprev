@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from mdprev.preferences import (
+from mdprev.core.preferences import (
     DEFAULT_FONT,
     DEFAULT_HISTORY_LIMIT,
     DEFAULT_SIDEBAR_VISIBLE,

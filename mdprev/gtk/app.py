@@ -13,10 +13,10 @@ gi.require_version("Pango", "1.0")
 gi.require_version("WebKit", "6.0")
 from gi.repository import Gio, GLib, Gtk, Pango, WebKit  # noqa: E402
 
-from . import git_history  # noqa: E402
-from .git_history import WORKING_COPY, Commit, Revision  # noqa: E402
-from .preferences import load_preferences, save_preferences  # noqa: E402
-from .render import (  # noqa: E402
+from ..core import git_history  # noqa: E402
+from ..core.git_history import WORKING_COPY, Commit, Revision  # noqa: E402
+from ..core.preferences import load_preferences, save_preferences  # noqa: E402
+from ..core.render import (  # noqa: E402
     RenderError,
     error_document,
     read_source,

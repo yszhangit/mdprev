@@ -4,8 +4,8 @@ import re
 
 import pytest
 
-from mdprev import render
-from mdprev.render import RenderError, error_document, read_source, render_markdown, sanitize_fragment
+from mdprev.core import render
+from mdprev.core.render import RenderError, error_document, read_source, render_markdown, sanitize_fragment
 
 
 def test_gfm_features_and_complete_document(tmp_path: Path):
@@ -29,7 +29,7 @@ def _code_text(html: str) -> str:
 
 
 def test_every_supported_language_is_highlighted():
-    source = (Path(__file__).parent / "fixtures" / "highlighting.md").read_text()
+    source = (Path(__file__).parent.parent / "fixtures" / "highlighting.md").read_text()
     html = render_markdown(source)
     supported = {
         "bash", "python", "javascript", "typescript", "json", "yaml", "html",
@@ -200,7 +200,7 @@ def test_render_diff_does_not_invoke_cmark(monkeypatch):
     assert "+new" in unescape(re.sub(r"<[^>]+>", "", render.render_diff("@@ -1 +1 @@\n-old\n+new\n")))
 
 
-from mdprev.diffmodel import Comparison, DiffLine, FileStats, Hunk, Side  # noqa: E402
+from mdprev.core.diffmodel import Comparison, DiffLine, FileStats, Hunk, Side  # noqa: E402
 
 
 def make_comparison(**overrides):

@@ -4,8 +4,8 @@ import pytest
 
 pygit2 = pytest.importorskip("pygit2")
 
-from mdprev.git_history import WORKING_COPY  # noqa: E402
-from mdprev.sidebar import HistorySidebar  # noqa: E402
+from mdprev.core.git_history import WORKING_COPY  # noqa: E402
+from mdprev.gtk.sidebar import HistorySidebar  # noqa: E402
 
 
 def visible_pins(sidebar):

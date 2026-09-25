@@ -16,9 +16,9 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Pango", "1.0")
 from gi.repository import Gdk, Gtk, Pango  # noqa: E402
 
-from . import git_history  # noqa: E402
-from .diffmodel import FileStats, format_stats, pins_available  # noqa: E402
-from .git_history import WORKING_COPY, Commit, Revision, WorkingCopy  # noqa: E402
+from ..core import git_history  # noqa: E402
+from ..core.diffmodel import FileStats, format_stats, pins_available  # noqa: E402
+from ..core.git_history import WORKING_COPY, Commit, Revision, WorkingCopy  # noqa: E402
 
 
 # The application has no other GTK-level styling; all document styling lives
