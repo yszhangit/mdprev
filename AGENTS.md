@@ -3,13 +3,35 @@
 ## Project purpose
 
 MdPrev is a small, read-only Markdown preview application for Ubuntu 26.04 LTS
-GNOME. Keep the application focused, native-looking, and easy to install from
-Ubuntu packages. Do not add cross-platform abstractions.
+GNOME and macOS 26 on Apple silicon. Keep the application focused,
+native-looking on each platform, and easy to install.
+
+## Code layout
+
+- `mdprev/core/`: all toolkit-neutral behavior: rendering, sanitizing,
+  highlighting, git history and comparison, preferences, navigation policy
+  (`navigation.py`), window state (`session.py`), and sidebar selection and pin
+  rules (`history_state.py`). It must never import `gi`, `objc`, AppKit,
+  WebKit, or any other GUI module; `tests/test_core_imports.py` enforces this.
+- `mdprev/gtk/`: the GTK 4 / WebKitGTK 6.0 front end for Linux.
+- `mdprev/macos/`: the AppKit / `WKWebView` front end for macOS (PyObjC).
+- `packaging/linux/`, `packaging/macos/`: install scripts and bundle config.
+- `tests/core/` runs on both platforms; `tests/gtk/` only where PyGObject is
+  installed; `tests/macos/` only on macOS.
+
+Every new feature is implemented in `mdprev/core` first, with headless tests.
+Front ends only create widgets, bind shortcuts, run timers and file watchers,
+and carry out decisions the core returns. A feature is done when both front
+ends have it, or when the parity table in `FEATURE_REQUIREMENTS.md` section 10
+records the gap. Do not add a third front end or a generic widget abstraction
+layer: the two front ends share logic, not UI code.
 
 Read `FEATURE_REQUIREMENTS.md` before changing application behavior. Implement
 MVP 1 before starting MVP 2.
 
-## Supported environment
+## Supported environments
+
+### Linux
 
 - Ubuntu 26.04 LTS (Resolute)
 - GNOME 50 on Wayland
@@ -23,7 +45,18 @@ MVP 1 before starting MVP 2.
 - MVP 5 (revision comparison) adds no dependencies; word-level diffing uses
   the standard library's `difflib`
 
-Do not introduce Qt, Electron, Tauri, Node.js, a JavaScript framework, a Python
+### macOS
+
+- macOS 26 on Apple silicon only (no Intel, no universal builds)
+- Homebrew `python@3.12` and `cmark-gfm`
+- A `venv/` virtual environment from `packaging/macos/requirements.txt`
+  (PyObjC, Pygments, pygit2, pytest, py2app); this is the only place a virtual
+  environment is allowed
+- Command Line Tools only; do not require full Xcode
+- Package installs are run by the maintainer (the machine is firewalled):
+  list the exact `brew`/`pip` commands rather than running them
+
+Do not introduce Qt, Electron, Tauri, Node.js, a JavaScript framework, a Linux
 virtual environment, or a bundled web server.
 
 ## Product constraints
@@ -46,6 +79,12 @@ virtual environment, or a bundled web server.
 
 ## Implementation guidance
 
+These describe the Linux front end; the macOS front end follows the equivalents
+in `FEATURE_REQUIREMENTS.md` section 10.1 (`NSApplication` open-file delegate,
+`WKWebView` with page JavaScript disabled and a navigation delegate that obeys
+`core.navigation.classify_link`, a debounced kqueue/FSEvents watcher, `Cmd`
+shortcuts).
+
 - Use `Gtk.Application` with `Gio.ApplicationFlags.HANDLES_OPEN` for file-open
   requests from the command line and Files (Nautilus).
 - Use `Gio.FileMonitor` for live reload and debounce bursts of filesystem
@@ -58,21 +97,21 @@ virtual environment, or a bundled web server.
   Markdown input as untrusted.
 - Preserve the approximate vertical reading position across automatic reloads.
 - Escape all application-generated error text before placing it in HTML.
-- Keep rendering logic separate from GTK window/application code so it can be
-  unit tested without a display server.
+- Keep rendering and decision logic in `mdprev/core` so it can be unit tested
+  without a display server.
 - Avoid broad exception handling. Convert expected I/O, decoding, parser, and
   subprocess failures into concise user-facing errors and useful diagnostics.
 - Use UTF-8. Report invalid input cleanly; do not silently rewrite it.
 - Use `pathlib` for filesystem paths.
 - Do not use shell interpolation for filenames or URLs.
 
-## Desktop integration
+## Desktop integration (Linux)
 
 - Provide a freedesktop `.desktop` entry using `%f`, not a hand-built argument
   string.
 - Advertise `text/markdown` and `text/x-markdown`.
 - Provide an SVG application icon.
-- Provide user-local `install.sh` and `uninstall.sh` scripts.
+- Provide user-local `packaging/linux/install.sh` and `uninstall.sh` scripts.
 - Installation should target the applicable XDG user directories and must not
   require `sudo` except for installing missing Ubuntu packages.
 - Setting MdPrev as the default Markdown handler must be explicit and reversible.
@@ -95,9 +134,12 @@ and render unknown languages as plain code.
 
 For every behavior change:
 
-1. Run unit tests for rendering, URL decisions, and path handling.
+1. Run unit tests for rendering, URL decisions, and path handling
+   (`venv/bin/pytest` on macOS, `python3 -m pytest` on Ubuntu).
 2. Run syntax/static checks configured by the repository.
-3. Launch the application on Ubuntu 26.04 when display integration changes.
+3. Launch the application on each platform whose front end changed: Ubuntu
+   26.04 for `mdprev/gtk`, macOS for `mdprev/macos`. A core change affects
+   both.
 4. Test a filename containing spaces and non-ASCII characters.
 5. Test an untrusted document containing raw HTML, JavaScript URLs, remote
    images, and malformed Markdown.
@@ -105,8 +147,10 @@ For every behavior change:
    replacement.
 
 Do not claim GNOME integration is verified unless opening from Files and the
-MIME association have actually been tested. If GUI verification is unavailable,
-state that limitation in the handoff.
+MIME association have actually been tested, nor macOS integration unless
+opening from Finder has. GTK code cannot be run on macOS: when it changes
+there, say it is unverified until run on Ubuntu. If GUI verification is
+unavailable, state that limitation in the handoff.
 
 ## Change style
 

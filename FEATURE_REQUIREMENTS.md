@@ -1,7 +1,8 @@
 # MdPrev Feature Requirements
 
 Status: approved implementation plan  
-Target: Ubuntu 26.04 LTS (Resolute), GNOME 50, Wayland  
+Target: Ubuntu 26.04 LTS (Resolute), GNOME 50, Wayland; macOS 26 on Apple
+silicon (planned, see section 10)  
 Product type: local, read-only Markdown previewer
 
 ## 1. Product goal
@@ -10,11 +11,21 @@ MdPrev lets a user open a Markdown file from GNOME Files or the terminal and
 read a clean rendered preview that updates when the source file is saved.
 
 The product is intentionally narrow. It is not a Markdown editor, document
-manager, browser, or cross-platform application.
+manager, or browser. It supports exactly two platforms, Ubuntu GNOME and macOS,
+each through a native front end over one shared core (section 10); no other
+platform is in scope.
 
 ## 2. Runtime architecture
 
-The planned runtime stack is:
+The code is split into a toolkit-neutral core and one front end per platform:
+
+- `mdprev/core`: reading, rendering, sanitizing, highlighting, git history,
+  comparison, preferences, navigation policy, and window/sidebar state. It
+  never imports a GUI toolkit, and a test enforces that.
+- `mdprev/gtk`: the Linux front end described below.
+- `mdprev/macos`: the macOS front end (section 10).
+
+The Linux runtime stack is:
 
 - Python 3
 - GTK 4 via PyGObject for the application and window
@@ -355,7 +366,7 @@ The following are outside MVP 1 through MVP 5:
 - Browser navigation
 - Plugins
 - Packaging for non-Ubuntu Linux distributions
-- Windows or macOS support
+- Windows support
 - Per-file preferences or per-document state restoration
 - Repository mutation of any kind: checkout, restore, stash, commit
 - Remote git information: fetch, upstream tracking, ahead/behind
@@ -369,7 +380,7 @@ When tradeoffs arise, prioritize in this order:
 
 1. Safe handling of untrusted Markdown
 2. Correct and predictable preview behavior
-3. Native Ubuntu GNOME integration
+3. Native integration on each supported platform (Ubuntu GNOME, macOS)
 4. Low dependency and maintenance cost
 5. Startup and reload performance
 6. Additional features
@@ -377,3 +388,49 @@ When tradeoffs arise, prioritize in this order:
 The application should remain small enough for a new GUI developer to
 understand and maintain.
 
+## 10. macOS support and platform parity
+
+MdPrev also runs on macOS 26 on Apple silicon (Intel Macs and older macOS
+releases are out of scope). The macOS front end is native: AppKit and
+`WKWebView` through PyObjC, over the same `mdprev/core` as Linux. Every product
+requirement in sections 3 to 7 applies on macOS, with the platform
+equivalents below; the safety rules in section 3.4 apply unchanged.
+
+### 10.1 Platform equivalents
+
+| Linux (GNOME) | macOS |
+|---|---|
+| Files "Open With", `.desktop` entry, MIME types | Finder "Open With", `CFBundleDocumentTypes` for `net.daringfireball.markdown` |
+| `xdg-mime default …` | Finder Get Info, "Open with", "Change All…" |
+| `Gio.FileMonitor` | kqueue (or FSEvents) with the same debounce and replacement recovery |
+| WebKitGTK 6.0 | `WKWebView`, page JavaScript disabled |
+| Header bar and popover | Window toolbar and popover |
+| GNOME light/dark preference | macOS appearance (light/dark) |
+| `Ctrl` shortcuts | `Cmd` shortcuts; `Escape` unchanged |
+| `~/.config/mdprev/preferences.json` | `~/Library/Application Support/MdPrev/preferences.json` |
+| Ubuntu packages, `install.sh` | `MdPrev.app` built with py2app; `cmark-gfm` from Homebrew |
+
+### 10.2 Parity rule
+
+New behavior is implemented in `mdprev/core` first, with headless tests, and
+each front end only connects widgets to it. A feature is complete when both
+front ends provide it, or when the table below records the gap.
+
+| Feature | Linux | macOS |
+|---|---|---|
+| MVP 1: display, live reload, safety, installation | Done | Planned |
+| MVP 2: syntax highlighting | Done | Planned |
+| MVP 3: font, theme, zoom | Done | Planned |
+| MVP 4: git history sidebar | Done | Planned |
+| MVP 5: revision comparison | Done | Planned |
+
+### 10.3 macOS acceptance criteria
+
+The macOS front end is complete when, on macOS 26 on Apple silicon, the
+acceptance criteria of MVP 1 to MVP 5 pass with the equivalents in 10.1, and:
+
+1. A Markdown file opens from Finder (double-click and "Open With"), the Dock,
+   and `open -a MdPrev FILE`.
+2. `cmark-gfm` is found when the app is launched from Finder, whose PATH
+   excludes Homebrew.
+3. The core test suite passes on macOS; the GTK tests are skipped there.
