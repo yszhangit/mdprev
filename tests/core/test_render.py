@@ -478,3 +478,29 @@ def test_diff_palette_is_defined_for_every_theme():
         block = html.split(theme + " {", 1)[1].split("}", 1)[0]
         assert "--diff-del-bg" in block and "--diff-add-word" in block
     assert html.count("--diff-fold:") >= 5  # :root, system dark, light, dark, sepia
+
+
+def test_find_cmark_prefers_path(monkeypatch):
+    monkeypatch.setattr(render.shutil, "which", lambda name: "/usr/bin/cmark-gfm")
+
+    assert render.find_cmark() == "/usr/bin/cmark-gfm"
+
+
+def test_find_cmark_falls_back_to_known_install_locations(monkeypatch, tmp_path):
+    fallback = tmp_path / "cmark-gfm"
+    fallback.write_text("#!/bin/sh\n")
+    fallback.chmod(0o755)
+    monkeypatch.setattr(render.shutil, "which", lambda name: None)
+    monkeypatch.setattr(render, "_CMARK_FALLBACKS", (tmp_path / "absent", fallback))
+
+    assert render.find_cmark() == str(fallback)
+
+
+def test_find_cmark_leaves_a_missing_program_to_the_launch_error(monkeypatch, tmp_path):
+    monkeypatch.setattr(render.shutil, "which", lambda name: None)
+    monkeypatch.setattr(render, "_CMARK_FALLBACKS", (tmp_path / "absent",))
+    monkeypatch.setenv("PATH", str(tmp_path))
+
+    assert render.find_cmark() == "cmark-gfm"
+    with pytest.raises(RenderError, match="Unable to run cmark-gfm"):
+        render_markdown("text")

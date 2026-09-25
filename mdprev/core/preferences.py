@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import sys
 from typing import Any
 
 CONFIG_DIR_NAME = "mdprev"
+MACOS_CONFIG_DIR_NAME = "MdPrev"
 CONFIG_FILE_NAME = "preferences.json"
 
 DEFAULT_FONT = "system"
@@ -32,13 +34,18 @@ MAX_HISTORY_LIMIT = 500
 
 
 def get_config_file_path() -> Path:
-    """Return the Path to the user's preferences JSON file following XDG Base Directory specification."""
+    """Return the Path to the user's preferences JSON file.
+
+    An explicit XDG_CONFIG_HOME wins on every platform.  Otherwise Linux uses
+    the XDG default (~/.config) and macOS its Application Support directory.
+    """
     xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
     if xdg_config_home:
-        base_dir = Path(xdg_config_home)
-    else:
-        base_dir = Path.home() / ".config"
-    return base_dir / CONFIG_DIR_NAME / CONFIG_FILE_NAME
+        return Path(xdg_config_home) / CONFIG_DIR_NAME / CONFIG_FILE_NAME
+    if sys.platform == "darwin":
+        base_dir = Path.home() / "Library" / "Application Support"
+        return base_dir / MACOS_CONFIG_DIR_NAME / CONFIG_FILE_NAME
+    return Path.home() / ".config" / CONFIG_DIR_NAME / CONFIG_FILE_NAME
 
 
 def load_preferences() -> dict[str, Any]:

@@ -169,3 +169,28 @@ def test_wrongly_typed_sidebar_values_fall_back_to_defaults(monkeypatch, tmp_pat
     assert prefs["sidebar_visible"] is DEFAULT_SIDEBAR_VISIBLE
     assert prefs["sidebar_width"] == DEFAULT_SIDEBAR_WIDTH
     assert prefs["history_limit"] == DEFAULT_HISTORY_LIMIT
+
+
+def test_config_path_defaults_to_xdg_on_linux(monkeypatch, tmp_path: Path):
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr("mdprev.core.preferences.sys.platform", "linux")
+
+    assert get_config_file_path() == tmp_path / ".config" / "mdprev" / "preferences.json"
+
+
+def test_config_path_defaults_to_application_support_on_macos(monkeypatch, tmp_path: Path):
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr("mdprev.core.preferences.sys.platform", "darwin")
+
+    assert get_config_file_path() == (
+        tmp_path / "Library" / "Application Support" / "MdPrev" / "preferences.json"
+    )
+
+
+def test_explicit_xdg_config_home_wins_on_macos(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setattr("mdprev.core.preferences.sys.platform", "darwin")
+
+    assert get_config_file_path() == tmp_path / "mdprev" / "preferences.json"
