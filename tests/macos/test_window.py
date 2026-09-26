@@ -211,3 +211,19 @@ _PNG = bytes.fromhex(
     "1f15c4890000000d49444154789c6360f8cfc0f01f0005000201"
     "e2b1c1a00000000049454e44ae426082"
 )
+
+
+def test_history_hidden_at_launch_opens_with_its_rows(open_window, tmp_path):
+    save_preferences(sidebar_visible=False)
+    doc = _repo(tmp_path, ["# First\n", "# Second\n"])
+    window = open_window(doc)
+    assert window.sidebar_visible is False
+
+    window.set_sidebar_visible(True)
+    spin(0.6)
+
+    sidebar = window.sidebar
+    row = sidebar._table.viewAtColumn_row_makeIfNecessary_(0, 1, True)
+    summary = [v for v in row.subviews() if v.stringValue() == "v1"][0]
+    assert sidebar._table.frame().size.width > 150
+    assert summary.frame().size.width > 100

@@ -138,10 +138,12 @@ class PreviewWindow:
 
         visible = self.sidebar is not None and prefs.get("sidebar_visible", False)
         if self._sidebar_item is not None:
-            self._sidebar_item.setCollapsed_(not visible)
+            # Size first: moving the divider uncollapses the sidebar, which
+            # left it open but empty when it should have started hidden.
             self._split.splitView().setPosition_ofDividerAtIndex_(
                 prefs.get("sidebar_width", 280), 0
             )
+            self._sidebar_item.setCollapsed_(not visible)
             if visible:
                 self.sidebar.load(self._repo, self.path, self._history_limit)
 
