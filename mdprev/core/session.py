@@ -9,6 +9,7 @@ front end only wires them to its widgets.
 from __future__ import annotations
 
 from html import escape
+import json
 from pathlib import Path
 
 from . import git_history
@@ -128,3 +129,9 @@ def with_base_href(html: str, uri: str) -> str:
     head = "<head>"
     index = html.index(head) + len(head)
     return f'{html[:index]}<base href="{escape(uri)}">{html[index:]}'
+
+
+def scroll_to_anchor_script(anchor: str) -> str:
+    """Host-evaluated JavaScript that scrolls the page to an element id."""
+
+    return f"document.getElementById({json.dumps(anchor)})?.scrollIntoView()"
