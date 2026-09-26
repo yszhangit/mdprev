@@ -2,8 +2,8 @@
 
 MdPrev is a small, read-only Markdown previewer for Ubuntu 26.04 GNOME. It
 uses the system GTK 4, WebKitGTK 6.0, and cmark-gfm packages. A native macOS
-version (AppKit and WKWebView over the same core) is in progress; see
-[macOS development](#macos-development).
+version (AppKit and WKWebView over the same core) runs from a source checkout;
+see [macOS development](#macos-development).
 
 ## Install
 
@@ -87,17 +87,28 @@ packaging/linux/uninstall.sh
 
 ## macOS development
 
-The macOS front end is not usable yet, but the shared core and its tests run
-on macOS 26 on Apple silicon:
+The macOS version runs from a source checkout on macOS 26 on Apple silicon;
+an app bundle for Finder's **Open With** is not built yet. Set it up once:
 
 ```sh
 brew install cmark-gfm
 /opt/homebrew/bin/python3.12 -m venv venv
 venv/bin/pip install -r packaging/macos/requirements.txt
-venv/bin/pytest
 ```
 
-The GTK tests are skipped on macOS.
+Then open a document:
+
+```sh
+venv/bin/python -m mdprev path/to/document.md
+```
+
+It behaves as described above, with macOS conventions: zoom with `Cmd`+`=`,
+`Cmd`+`-`, and `Cmd`+`0`; font and theme under the **View** menu; the git
+history sidebar with the toolbar button or `Ctrl`+`Cmd`+`S`; and `Escape` (or
+**View > Back to Working Copy**) to clear a pin or return to the working copy.
+Preferences are stored in `~/Library/Application Support/MdPrev`.
+
+Run the tests with `venv/bin/pytest`; the GTK tests are skipped on macOS.
 
 ## License
 

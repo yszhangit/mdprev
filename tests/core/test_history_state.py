@@ -112,3 +112,107 @@ def test_a_pin_is_dropped_when_comparison_becomes_impossible():
     state.update(1, False, False)
 
     assert state.pinned is None
+
+
+# -- HistoryModel, against real temporary repositories --------------------
+
+import pytest  # noqa: E402
+
+from mdprev.core.history_state import HistoryModel, Row, revision_key  # noqa: E402
+
+pygit2 = pytest.importorskip("pygit2")
+
+
+def _repo_with_commits(tmp_path, count):
+    repo = pygit2.init_repository(str(tmp_path))
+    doc = tmp_path / "doc.md"
+    for n in range(count):
+        doc.write_text(f"version {n}\n", encoding="utf-8")
+        repo.index.add("doc.md")
+        repo.index.write()
+        tree = repo.index.write_tree()
+        signature = pygit2.Signature("Test Author", "t@example.com", 1700000000 + n, 0)
+        parents = [] if repo.head_is_unborn else [repo.head.target]
+        repo.create_commit("HEAD", signature, signature, f"v{n}", tree, parents)
+    return repo, doc
+
+
+def test_revision_key_names_rows():
+    assert revision_key(WORKING_COPY) == "working"
+    assert revision_key(A) == A.sha
+
+
+def test_model_outside_a_repository_says_so(tmp_path):
+    model = HistoryModel()
+    model.load(None, tmp_path / "doc.md", 10)
+
+    assert model.has_repository is False
+    assert model.rows() == [Row("revision", WORKING_COPY), Row("message", text="Not in a git repository")]
+
+
+def test_model_for_an_untracked_file_says_so(tmp_path):
+    repo, _doc = _repo_with_commits(tmp_path, 1)
+    other = tmp_path / "other.md"
+    other.write_text("x\n", encoding="utf-8")
+
+    model = HistoryModel()
+    model.load(repo, other, 10)
+
+    assert model.rows()[-1] == Row("message", text="Not tracked in this repository")
+
+
+def test_model_pages_history_with_show_more(tmp_path):
+    repo, doc = _repo_with_commits(tmp_path, 3)
+    model = HistoryModel()
+    model.load(repo, doc, 2)
+
+    rows = model.rows()
+    assert [row.kind for row in rows] == ["revision", "revision", "revision", "more"]
+    assert [row.revision.summary for row in rows[1:3]] == ["v2", "v1"]
+
+    model.load_more()
+
+    rows = model.rows()
+    assert [row.kind for row in rows] == ["revision"] * 4
+    assert rows[-1].revision.summary == "v0"
+
+
+def test_model_keeps_an_off_page_selection_listed(tmp_path):
+    repo, doc = _repo_with_commits(tmp_path, 3)
+    model = HistoryModel()
+    model.load(repo, doc, 1)
+    model.load_more()
+    model.load_more()
+    oldest = model.commits[-1]
+    model.selection.select(oldest)
+
+    model.load(repo, doc, 1)  # the sidebar was hidden and reshown
+
+    revisions = [row.revision for row in model.rows() if row.kind == "revision"]
+    assert revisions[1] == oldest
+
+
+def test_model_tracks_modification_and_stats(tmp_path):
+    repo, doc = _repo_with_commits(tmp_path, 2)
+    model = HistoryModel()
+    model.load(repo, doc, 10)
+    model.refresh_status()
+    assert model.modified is False
+
+    doc.write_text("changed text here\n", encoding="utf-8")
+    model.refresh_status()
+
+    assert model.modified is True
+    assert model.working_stats().words == 3
+    assert model.commit_stats(model.commits[0]).words == 2
+    assert model.update_pins() is False
+    assert model.selection.pin_visible(WORKING_COPY) is True
+
+
+def test_model_hides_working_stats_when_the_file_vanishes(tmp_path):
+    repo, doc = _repo_with_commits(tmp_path, 1)
+    model = HistoryModel()
+    model.load(repo, doc, 10)
+    doc.unlink()
+
+    assert model.working_stats() is None

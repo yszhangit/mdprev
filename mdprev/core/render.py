@@ -218,7 +218,7 @@ def sanitize_fragment(fragment: str, document_dir: Path | None = None) -> str:
 _FONTS = {
     "system": "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
     "sans": "'Ubuntu', 'Ubuntu Sans', 'Cantarell', system-ui, sans-serif",
-    "serif": "'DejaVu Serif', 'Noto Serif', 'Liberation Serif', serif",
+    "serif": "'DejaVu Serif', 'Noto Serif', 'Liberation Serif', ui-serif, serif",
     "mono": "'Ubuntu Sans Mono', 'Ubuntu Mono', 'DejaVu Sans Mono', 'Liberation Mono', ui-monospace, monospace",
 }
 
