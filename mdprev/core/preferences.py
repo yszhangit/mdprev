@@ -20,6 +20,9 @@ DEFAULT_WINDOW_HEIGHT = 720
 DEFAULT_SIDEBAR_VISIBLE = False
 DEFAULT_SIDEBAR_WIDTH = 280
 DEFAULT_HISTORY_LIMIT = 10
+DEFAULT_OUTLINE_VISIBLE = False
+DEFAULT_OUTLINE_WIDTH = 240
+DEFAULT_OUTLINE_EXPAND_LEVEL = 2
 
 VALID_FONTS = ("system", "sans", "serif", "mono")
 VALID_THEMES = ("system", "light", "dark", "sepia")
@@ -31,6 +34,8 @@ MIN_SIDEBAR_WIDTH = 180
 MAX_SIDEBAR_WIDTH = 600
 MIN_HISTORY_LIMIT = 1
 MAX_HISTORY_LIMIT = 500
+MIN_OUTLINE_EXPAND_LEVEL = 1
+MAX_OUTLINE_EXPAND_LEVEL = 6
 
 
 def get_config_file_path() -> Path:
@@ -48,6 +53,10 @@ def get_config_file_path() -> Path:
     return Path.home() / ".config" / CONFIG_DIR_NAME / CONFIG_FILE_NAME
 
 
+def _valid_int(value: Any, low: int, high: int) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and low <= value <= high
+
+
 def load_preferences() -> dict[str, Any]:
     """Load user preferences from disk. Returns defaults if file is missing or invalid."""
     prefs: dict[str, Any] = {
@@ -60,6 +69,9 @@ def load_preferences() -> dict[str, Any]:
         "sidebar_visible": DEFAULT_SIDEBAR_VISIBLE,
         "sidebar_width": DEFAULT_SIDEBAR_WIDTH,
         "history_limit": DEFAULT_HISTORY_LIMIT,
+        "outline_visible": DEFAULT_OUTLINE_VISIBLE,
+        "outline_width": DEFAULT_OUTLINE_WIDTH,
+        "outline_expand_level": DEFAULT_OUTLINE_EXPAND_LEVEL,
     }
     path = get_config_file_path()
     try:
@@ -108,6 +120,18 @@ def load_preferences() -> dict[str, Any]:
                 and MIN_HISTORY_LIMIT <= history_limit <= MAX_HISTORY_LIMIT
             ):
                 prefs["history_limit"] = history_limit
+
+            outline_visible = data.get("outline_visible")
+            if isinstance(outline_visible, bool):
+                prefs["outline_visible"] = outline_visible
+
+            outline_width = data.get("outline_width")
+            if _valid_int(outline_width, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH):
+                prefs["outline_width"] = outline_width
+
+            expand_level = data.get("outline_expand_level")
+            if _valid_int(expand_level, MIN_OUTLINE_EXPAND_LEVEL, MAX_OUTLINE_EXPAND_LEVEL):
+                prefs["outline_expand_level"] = expand_level
     except (OSError, json.JSONDecodeError, UnicodeDecodeError):
         pass
     return prefs
@@ -123,6 +147,9 @@ def save_preferences(
     sidebar_visible: bool | None = None,
     sidebar_width: int | None = None,
     history_limit: int | None = None,
+    outline_visible: bool | None = None,
+    outline_width: int | None = None,
+    outline_expand_level: int | None = None,
 ) -> None:
     """Save updated preferences to disk, creating parent directories if needed."""
     current = load_preferences()
@@ -154,6 +181,12 @@ def save_preferences(
         and MIN_HISTORY_LIMIT <= history_limit <= MAX_HISTORY_LIMIT
     ):
         current["history_limit"] = history_limit
+    if isinstance(outline_visible, bool):
+        current["outline_visible"] = outline_visible
+    if _valid_int(outline_width, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH):
+        current["outline_width"] = outline_width
+    if _valid_int(outline_expand_level, MIN_OUTLINE_EXPAND_LEVEL, MAX_OUTLINE_EXPAND_LEVEL):
+        current["outline_expand_level"] = outline_expand_level
 
     path = get_config_file_path()
     try:

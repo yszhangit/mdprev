@@ -194,3 +194,27 @@ def test_explicit_xdg_config_home_wins_on_macos(monkeypatch, tmp_path: Path):
     monkeypatch.setattr("mdprev.core.preferences.sys.platform", "darwin")
 
     assert get_config_file_path() == tmp_path / "mdprev" / "preferences.json"
+
+
+def test_outline_preferences_default_and_round_trip(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    prefs = load_preferences()
+    assert (prefs["outline_visible"], prefs["outline_width"], prefs["outline_expand_level"]) == (
+        False, 240, 2,
+    )
+
+    save_preferences(outline_visible=True, outline_width=300, outline_expand_level=3)
+
+    prefs = load_preferences()
+    assert (prefs["outline_visible"], prefs["outline_width"], prefs["outline_expand_level"]) == (
+        True, 300, 3,
+    )
+
+
+def test_invalid_outline_preferences_are_ignored(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    save_preferences(outline_width=50, outline_expand_level=7)
+    save_preferences(outline_expand_level=True)
+
+    prefs = load_preferences()
+    assert (prefs["outline_width"], prefs["outline_expand_level"]) == (240, 2)

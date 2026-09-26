@@ -211,3 +211,92 @@ _PNG = bytes.fromhex(
     "1f15c4890000000d49444154789c6360f8cfc0f01f0005000201"
     "e2b1c1a00000000049454e44ae426082"
 )
+
+
+def test_history_hidden_at_launch_opens_with_its_rows(open_window, tmp_path):
+    save_preferences(sidebar_visible=False)
+    doc = _repo(tmp_path, ["# First\n", "# Second\n"])
+    window = open_window(doc)
+    assert window.sidebar_visible is False
+
+    window.set_sidebar_visible(True)
+    spin(0.6)
+
+    sidebar = window.sidebar
+    row = sidebar._table.viewAtColumn_row_makeIfNecessary_(0, 1, True)
+    summary = [v for v in row.subviews() if v.stringValue() == "v1"][0]
+    assert sidebar._table.frame().size.width > 150
+    assert summary.frame().size.width > 100
+
+
+OUTLINE_DOC = "# Guide\n\n" + "\n\n".join(
+    f"## Part {n}\n\n### Detail {n}\n\n" + "\n\n".join(f"Text {n}.{k}" for k in range(20))
+    for n in range(1, 4)
+) + "\n"
+
+
+def outline_texts(window):
+    return [row.heading.text for row in window.outline._rows]
+
+
+def test_outline_lists_headings_to_level_two_and_jumps(open_window, tmp_path):
+    save_preferences(outline_visible=True)
+    window = open_window(write(tmp_path / "doc.md", OUTLINE_DOC))
+
+    assert window.outline_visible
+    assert outline_texts(window) == ["Guide", "Part 1", "Part 2", "Part 3"]
+
+    window.outline._table.selectRowIndexes_byExtendingSelection_(NSIndexSet.indexSetWithIndex_(3), False)
+    window._jump_to(window.outline._rows[3].heading.anchor)
+    assert wait_for(lambda: evaluate(window, "Math.round(document.getElementById('part-3').getBoundingClientRect().top)") == 0)
+
+
+def test_outline_expands_and_follows_reloads(open_window, tmp_path):
+    doc = write(tmp_path / "doc.md", OUTLINE_DOC)
+    window = open_window(doc)
+
+    window.outline.toggle("part-1")
+    assert outline_texts(window)[:3] == ["Guide", "Part 1", "Detail 1"]
+
+    write(doc, OUTLINE_DOC + "\n## Part 4\n")
+    assert wait_for(lambda: outline_texts(window)[-1] == "Part 4")
+    assert "Detail 1" in outline_texts(window)
+
+
+def test_outline_is_unavailable_in_diff_views(open_window, tmp_path):
+    doc = _repo(tmp_path, ["# First\n", "# Second\n"])
+    window = open_window(doc)
+
+    window._history_selected(WORKING_COPY, None, "diff")
+
+    assert wait_for(lambda: not window.outline._message.isHidden())
+    assert window.outline._rows == []
+
+
+def test_closing_during_a_pending_refresh_is_safe(open_window, tmp_path, fake_app):
+    window = open_window(write(tmp_path / "doc.md", "# T\n"))
+
+    window.refresh_document()
+    window.window.close()
+    spin(0.5)
+
+    assert fake_app.closed == [window]
+
+
+def test_outline_and_history_visibility_are_remembered(open_window, tmp_path):
+    from mdprev.core.preferences import load_preferences
+
+    doc = _repo(tmp_path, ["# First\n"])
+    window = open_window(doc)
+    assert (window.outline_visible, window.sidebar_visible) == (False, False)
+
+    window.set_outline_visible(True)
+    window.set_sidebar_visible(True)
+    spin(0.5)
+
+    prefs = load_preferences()
+    assert (prefs["outline_visible"], prefs["sidebar_visible"]) == (True, True)
+    def left_edge(view):
+        return view.convertRect_toView_(view.bounds(), None).origin.x
+
+    assert left_edge(window.outline.view) < left_edge(window._webview) < left_edge(window.sidebar.view)

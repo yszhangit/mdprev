@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 import shutil
 import tempfile
@@ -14,6 +13,7 @@ from AppKit import (
     NSSplitViewController,
     NSSplitViewItem,
     NSToolbar,
+    NSToolbarFlexibleSpaceItemIdentifier,
     NSToolbarItem,
     NSViewController,
     NSWindow,
@@ -36,6 +36,7 @@ from WebKit import (
 from ..core import git_history
 from ..core.git_history import WORKING_COPY, Revision
 from ..core.navigation import Allow, OpenDocument, OpenExternal, classify_link
+from ..core.outline import headings_for_view
 from ..core.preferences import (
     MAX_SIDEBAR_WIDTH,
     MIN_SIDEBAR_WIDTH,
@@ -47,12 +48,14 @@ from ..core.session import (
     base_uri,
     build_html,
     reloads_on_save,
+    scroll_to_anchor_script,
     view_changed,
     window_titles,
     with_base_href,
     zoom_in,
     zoom_out,
 )
+from .outline import OutlinePanel
 from .sidebar import HistorySidebar
 from .watcher import FileWatcher
 
@@ -60,6 +63,7 @@ from .watcher import FileWatcher
 # write/rename events into one reload.
 RELOAD_DELAY_SECONDS = 0.18
 _HISTORY_ITEM = "io.github.yszhangit.mdprev.history"
+_OUTLINE_ITEM = "io.github.yszhangit.mdprev.outline"
 
 
 class PreviewWindow:
@@ -80,6 +84,9 @@ class PreviewWindow:
         self.mode = "rendered"
         self._pending_scroll_y: float | None = None
         self._reload_timer = None
+        # WebKit completion handlers can arrive after the window closed and
+        # its scratch directory is gone; they must then do nothing.
+        self._closed = False
         # WKWebView grants file access only to pages loaded from files, so the
         # rendered HTML is written here and loaded with read access to the
         # local images the sanitizer allowed.
@@ -106,29 +113,25 @@ class PreviewWindow:
         self.window.setDelegate_(self._bridge)
         self.window.setRepresentedURL_(NSURL.fileURLWithPath_(str(path)))
 
+        # Outline on the left, the document, and history on the right (only
+        # inside a git repository).
+        self.outline = OutlinePanel(prefs.get("outline_expand_level", 2), self._jump_to)
+        self._outline_item = self._pane(self.outline.view, sidebar=True)
+        self._split = NSSplitViewController.alloc().init()
+        self._split.addSplitViewItem_(self._outline_item)
+        self._split.addSplitViewItem_(NSSplitViewItem.splitViewItemWithViewController_(web_controller))
         self.sidebar: HistorySidebar | None = None
         self._sidebar_item = None
         if self._repo is not None:
             self.sidebar = HistorySidebar(self._history_selected)
-            sidebar_controller = NSViewController.alloc().init()
-            sidebar_controller.setView_(self.sidebar.view)
-            self._sidebar_item = NSSplitViewItem.sidebarWithViewController_(sidebar_controller)
-            self._sidebar_item.setMinimumThickness_(MIN_SIDEBAR_WIDTH)
-            self._sidebar_item.setMaximumThickness_(MAX_SIDEBAR_WIDTH)
-            self._sidebar_item.setCanCollapse_(True)
-            self._split = NSSplitViewController.alloc().init()
+            self._sidebar_item = self._pane(self.sidebar.view, sidebar=False)
             self._split.addSplitViewItem_(self._sidebar_item)
-            self._split.addSplitViewItem_(
-                NSSplitViewItem.splitViewItemWithViewController_(web_controller)
-            )
-            self.window.setContentViewController_(self._split)
-            toolbar = NSToolbar.alloc().initWithIdentifier_("io.github.yszhangit.mdprev")
-            toolbar.setDelegate_(self._bridge)
-            toolbar.setDisplayMode_(1)  # NSToolbarDisplayModeIconOnly
-            self.window.setToolbar_(toolbar)
-            self.window.setToolbarStyle_(NSWindowToolbarStyleUnified)
-        else:
-            self.window.setContentViewController_(web_controller)
+        self.window.setContentViewController_(self._split)
+        toolbar = NSToolbar.alloc().initWithIdentifier_("io.github.yszhangit.mdprev")
+        toolbar.setDelegate_(self._bridge)
+        toolbar.setDisplayMode_(1)  # NSToolbarDisplayModeIconOnly
+        self.window.setToolbar_(toolbar)
+        self.window.setToolbarStyle_(NSWindowToolbarStyleUnified)
         # Setting a content view controller resizes the window to the
         # controller's view; restore the saved size afterwards.
         self.window.setContentSize_((prefs.get("window_width", 920), prefs.get("window_height", 720)))
@@ -136,17 +139,47 @@ class PreviewWindow:
         if prefs.get("window_maximized", False):
             self.window.zoom_(None)
 
-        visible = self.sidebar is not None and prefs.get("sidebar_visible", False)
+        # Size the panes first: moving a divider uncollapses its pane, which
+        # once left the history open but empty when it should start hidden.
+        split_view = self._split.splitView()
+        self._split.view().layoutSubtreeIfNeeded()
+        split_view.setPosition_ofDividerAtIndex_(prefs.get("outline_width", 240), 0)
         if self._sidebar_item is not None:
-            self._sidebar_item.setCollapsed_(not visible)
-            self._split.splitView().setPosition_ofDividerAtIndex_(
-                prefs.get("sidebar_width", 280), 0
+            split_view.setPosition_ofDividerAtIndex_(
+                split_view.frame().size.width
+                - prefs.get("sidebar_width", 280)
+                - split_view.dividerThickness(),
+                1,
             )
+        self._outline_item.setCollapsed_(not prefs.get("outline_visible", False))
+        if self._sidebar_item is not None:
+            visible = prefs.get("sidebar_visible", False)
+            self._sidebar_item.setCollapsed_(not visible)
             if visible:
                 self.sidebar.load(self._repo, self.path, self._history_limit)
 
         self._watcher = FileWatcher(path, self._file_changed)
         self.load_document()
+
+    @staticmethod
+    def _pane(view, sidebar: bool) -> NSSplitViewItem:
+        controller = NSViewController.alloc().init()
+        controller.setView_(view)
+        make = (
+            NSSplitViewItem.sidebarWithViewController_ if sidebar
+            else NSSplitViewItem.inspectorWithViewController_
+        )
+        item = make(controller)
+        item.setMinimumThickness_(MIN_SIDEBAR_WIDTH)
+        item.setMaximumThickness_(MAX_SIDEBAR_WIDTH)
+        item.setCanCollapse_(True)
+        return item
+
+    def toolbar_items(self) -> list[str]:
+        items = [_OUTLINE_ITEM, NSToolbarFlexibleSpaceItemIdentifier]
+        if self.sidebar is not None:
+            items.append(_HISTORY_ITEM)
+        return items
 
     def _make_webview(self, zoom: float) -> WKWebView:
         config = WKWebViewConfiguration.alloc().init()
@@ -172,11 +205,14 @@ class PreviewWindow:
         self.window.setSubtitle_(subtitle or "")
 
     def load_document(self, restore_scroll_y: float | None = None) -> None:
+        if self._closed:
+            return
         self._update_titles()
         html = build_html(
             self.path, self._repo, self.target, self.base, self.mode, self.font, self.theme
         )
         self._view_file.write_text(with_base_href(html, base_uri(self.path)), encoding="utf-8")
+        self.outline.show(headings_for_view(html, self.mode))
         self._pending_scroll_y = restore_scroll_y
         self._webview.loadFileURL_allowingReadAccessToURL_(
             NSURL.fileURLWithPath_(str(self._view_file)), NSURL.fileURLWithPath_("/")
@@ -239,10 +275,7 @@ class PreviewWindow:
                 # The page's own URL is the scratch file, not the document's
                 # directory, so an in-document link would load that directory.
                 # Scroll to the anchor instead.
-                target = json.dumps(unquote(fragment))
-                self._webview.evaluateJavaScript_completionHandler_(
-                    f"document.getElementById({target})?.scrollIntoView()", None
-                )
+                self._jump_to(unquote(fragment))
                 return False
             return True
         if isinstance(decision, OpenExternal):
@@ -255,6 +288,23 @@ class PreviewWindow:
         if url is None or not url.isFileURL():
             return False
         return Path(url.path()).resolve() == self._view_file.resolve()
+
+    def _jump_to(self, anchor: str) -> None:
+        self._webview.evaluateJavaScript_completionHandler_(
+            scroll_to_anchor_script(anchor), None
+        )
+
+    # -- outline -----------------------------------------------------------
+
+    @property
+    def outline_visible(self) -> bool:
+        return not self._outline_item.isCollapsed()
+
+    def set_outline_visible(self, visible: bool) -> None:
+        if visible == self.outline_visible:
+            return
+        self._outline_item.animator().setCollapsed_(not visible)
+        save_preferences(outline_visible=visible)
 
     # -- history -----------------------------------------------------------
 
@@ -333,6 +383,7 @@ class PreviewWindow:
     # -- closing -----------------------------------------------------------
 
     def closed(self) -> None:
+        self._closed = True
         self._watcher.stop()
         if self._reload_timer is not None:
             self._reload_timer.invalidate()
@@ -345,11 +396,19 @@ class PreviewWindow:
         }
         if self.sidebar_visible:
             prefs["sidebar_width"] = int(self.sidebar.view.frame().size.width)
+        if self.outline_visible:
+            prefs["outline_width"] = int(self.outline.view.frame().size.width)
         save_preferences(**prefs)
         shutil.rmtree(self._scratch, ignore_errors=True)
         self._webview.setNavigationDelegate_(None)
         self._bridge.owner = None
         self.app.window_closed(self)
+
+
+_TOOLBAR_BUTTONS = {
+    _OUTLINE_ITEM: ("Outline", "Outline (⌃⌘S)", "sidebar.left", "toggleOutline:"),
+    _HISTORY_ITEM: ("History", "Git history (⌃⌘H)", "clock.arrow.circlepath", "toggleHistorySidebar:"),
+}
 
 
 class _WindowBridge(NSObject):
@@ -386,24 +445,27 @@ class _WindowBridge(NSObject):
     # NSToolbarDelegate
 
     def toolbarAllowedItemIdentifiers_(self, _toolbar):
-        return [_HISTORY_ITEM]
+        return self.owner.toolbar_items() if self.owner is not None else []
 
     def toolbarDefaultItemIdentifiers_(self, _toolbar):
-        return [_HISTORY_ITEM]
+        return self.owner.toolbar_items() if self.owner is not None else []
 
     def toolbar_itemForItemIdentifier_willBeInsertedIntoToolbar_(self, _toolbar, identifier, _insert):
+        label, tooltip, symbol, action = _TOOLBAR_BUTTONS[identifier]
         item = NSToolbarItem.alloc().initWithItemIdentifier_(identifier)
-        item.setLabel_("History")
-        item.setToolTip_("Git history (⌃⌘S)")
-        item.setImage_(
-            NSImage.imageWithSystemSymbolName_accessibilityDescription_("sidebar.left", "Git history")
-        )
+        item.setLabel_(label)
+        item.setToolTip_(tooltip)
+        item.setImage_(NSImage.imageWithSystemSymbolName_accessibilityDescription_(symbol, label))
         item.setBordered_(True)
         item.setTarget_(self)
-        item.setAction_("toggleHistorySidebar:")
+        item.setAction_(action)
         return item
 
     # Menu actions
+
+    def toggleOutline_(self, _sender):
+        if self.owner is not None:
+            self.owner.set_outline_visible(not self.owner.outline_visible)
 
     def toggleHistorySidebar_(self, _sender):
         if self.owner is not None:
@@ -442,6 +504,8 @@ class _WindowBridge(NSObject):
             item.setState_(1 if item.representedObject() == owner.font else 0)
         elif action == "mdprevSelectTheme:":
             item.setState_(1 if item.representedObject() == owner.theme else 0)
+        elif action == "toggleOutline:":
+            item.setTitle_("Hide Outline" if owner.outline_visible else "Show Outline")
         elif action == "toggleHistorySidebar:":
             item.setTitle_("Hide History" if owner.sidebar_visible else "Show History")
             return owner.sidebar is not None
