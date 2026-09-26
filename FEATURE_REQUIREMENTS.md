@@ -342,9 +342,38 @@ Common aliases such as `sh`, `bash`, `py`, `js`, `ts`, `yml`, `html`, `cpp`,
 12. MVP 1-4 acceptance criteria continue to pass, including behavior without
     python3-pygit2.
 
+## 7a. MVP 6: heading outline
+
+### 7a.1 Required behavior
+
+- A left-hand outline pane lists the document's headings (H1 to H6) as a
+  collapsible tree, nested by level; a skipped level nests under the nearest
+  higher heading.
+- Headings above level 2 start expanded, so H1 and H2 are visible by default.
+  The level is the global `outline_expand_level` preference (1 to 6, default
+  2); it has no control yet.
+- Expanding or collapsing a heading is kept across reloads of the document,
+  but is not saved between sessions (no per-file state).
+- Choosing a heading scrolls the preview to it. Anchors come from the
+  sanitized, displayed HTML, so every entry is a real target.
+- The outline follows the displayed revision in the Rendered view. The Diff
+  and Side by side views have no document headings; the pane says so.
+- The pane is toggled from the header bar/toolbar and a shortcut; its
+  visibility and width are global preferences. The git history pane moves to
+  the right so both can be open at once.
+
+### 7a.2 MVP 6 acceptance criteria
+
+1. A document's H1 and H2 headings are listed, nested, on opening the pane.
+2. Expanding a heading reveals its subheadings; collapsing hides them.
+3. Choosing a heading scrolls the preview so that heading is at the top.
+4. Saving the document updates the outline and keeps expanded headings open.
+5. Headings in code blocks are not listed.
+6. The outline and history panes can be open together, outline on the left.
+
 ## 8. Deferred features
 
-The following are outside MVP 1 through MVP 5:
+The following are outside MVP 1 through MVP 6:
 
 - Markdown editing or split editor/preview
 - Tabs, session restoration, and recent-file management
@@ -357,7 +386,7 @@ The following are outside MVP 1 through MVP 5:
 - Footnotes
 - Emoji shortcodes
 - YAML front matter presentation
-- Generated table of contents
+- A table of contents generated inside the document (the outline pane is MVP 6)
 - Wiki links and file includes
 - Custom arbitrary user CSS upload
 - Interactive task-list editing
@@ -407,7 +436,8 @@ equivalents below; the safety rules in section 3.4 apply unchanged.
 | Header bar and display-options popover | View menu (Zoom, Font, Theme) and a History toolbar button |
 | GNOME light/dark preference | macOS appearance (light/dark) |
 | `Ctrl`+`+`/`-`/`0` zoom | `Cmd`+`=`/`-`/`0` |
-| `Ctrl`+`H` history sidebar | `Ctrl`+`Cmd`+`S` (the macOS sidebar convention; `Cmd`+`H` hides the app) |
+| `F9` outline (the GNOME sidebar key) | `Ctrl`+`Cmd`+`S` (the macOS sidebar key) |
+| `Ctrl`+`H` history | `Ctrl`+`Cmd`+`H` (`Cmd`+`H` hides the app) |
 | `Escape` (no menu item) | `Escape`, also View > Back to Working Copy |
 | `~/.config/mdprev/preferences.json` | `~/Library/Application Support/MdPrev/preferences.json` |
 | Ubuntu packages, `install.sh` | `MdPrev.app` built with py2app; `cmark-gfm` from Homebrew |
@@ -426,6 +456,7 @@ front ends provide it, or when the table below records the gap.
 | MVP 3: font, theme, zoom | Done | Done |
 | MVP 4: git history sidebar | Done | Done |
 | MVP 5: revision comparison | Done | Done |
+| MVP 6: heading outline | Done (verify on Ubuntu) | Done |
 
 ### 10.3 macOS acceptance criteria
 

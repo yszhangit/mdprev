@@ -15,17 +15,20 @@ from gi.repository import Gio, GLib, Gtk, Pango, WebKit  # noqa: E402
 from ..core import git_history  # noqa: E402
 from ..core.git_history import WORKING_COPY, Revision  # noqa: E402
 from ..core.navigation import Allow, OpenDocument, OpenExternal, classify_link  # noqa: E402
+from ..core.outline import headings_for_view  # noqa: E402
 from ..core.preferences import load_preferences, save_preferences  # noqa: E402
 from ..core.session import (  # noqa: E402
     DEFAULT_ZOOM,
     base_uri,
     build_html,
     reloads_on_save,
+    scroll_to_anchor_script,
     view_changed,
     window_titles,
     zoom_in,
     zoom_out,
 )
+from .outline import OutlinePanel  # noqa: E402
 from .sidebar import HistorySidebar  # noqa: E402
 
 
@@ -81,6 +84,9 @@ class PreviewWindow(Gtk.ApplicationWindow):
         self._sidebar_width: int = prefs.get("sidebar_width", 280)
         self._history_limit: int = prefs.get("history_limit", 10)
         self._sidebar_visible: bool = prefs.get("sidebar_visible", False)
+        self._outline_width: int = prefs.get("outline_width", 240)
+        self._outline_visible: bool = prefs.get("outline_visible", False)
+        self._outline_expand_level: int = prefs.get("outline_expand_level", 2)
         self._repo = git_history.find_repository(path) if git_history.AVAILABLE else None
         # What the sidebar last reported: the version shown, and the version it
         # is compared against (None for its implicit parent / HEAD).
@@ -203,28 +209,57 @@ class PreviewWindow(Gtk.ApplicationWindow):
         menu_button.set_popover(popover)
         header_bar.pack_end(menu_button)
 
+        # Outline on the left, the document, and history on the right.
+        self._outline = OutlinePanel(self._outline_expand_level, self._jump_to)
         self._sidebar = HistorySidebar(self._history_selected)
+        # The document takes any extra width, so the history pane keeps its
+        # size when the window is resized.
+        self._history_paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
+        self._history_paned.set_start_child(self._webview)
+        self._history_paned.set_end_child(self._sidebar)
+        self._history_paned.set_resize_end_child(False)
+        self._history_paned.set_shrink_end_child(False)
+        # A paned is positioned from its start edge, which is unknown for a
+        # right-hand pane until the window is allocated; place it then.
+        self._history_divider = self._history_paned.connect(
+            "notify::max-position", self._place_history_divider
+        )
         self._paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
-        self._paned.set_start_child(self._sidebar)
-        self._paned.set_end_child(self._webview)
+        self._paned.set_start_child(self._outline)
+        self._paned.set_end_child(self._history_paned)
         self._paned.set_resize_start_child(False)
         self._paned.set_shrink_start_child(False)
-        self._paned.set_position(self._sidebar_width)
+        self._paned.set_position(self._outline_width)
         self.set_child(self._paned)
+
+        self._outline_button = Gtk.ToggleButton()
+        self._outline_button.set_icon_name("view-sidebar-start-symbolic")
+        self._outline_button.set_tooltip_text("Outline (F9)")
+        self._outline_button.set_active(self._outline_visible)
+        self._outline_button.connect("toggled", self._outline_toggled)
+        header_bar.pack_start(self._outline_button)
+        self._outline.set_visible(self._outline_visible)
 
         if self._repo is not None:
             self._sidebar_button = Gtk.ToggleButton()
-            self._sidebar_button.set_icon_name("view-sidebar-start-symbolic")
+            self._sidebar_button.set_icon_name("document-open-recent-symbolic")
             self._sidebar_button.set_tooltip_text("Git history (Ctrl+H)")
             self._sidebar_button.set_active(self._sidebar_visible)
             self._sidebar_button.connect("toggled", self._sidebar_toggled)
-            header_bar.pack_start(self._sidebar_button)
+            header_bar.pack_end(self._sidebar_button)
         else:
             self._sidebar_button = None
             self._sidebar_visible = False
         self._sidebar.set_visible(self._sidebar_visible)
         if self._sidebar_visible:
             self._sidebar.load(self._repo, self.path, self._history_limit)
+
+    def _place_history_divider(self, paned: Gtk.Paned, _pspec) -> None:
+        max_position = paned.get_property("max-position")
+        if max_position <= self._sidebar_width:
+            return  # not allocated yet
+        paned.disconnect(self._history_divider)
+        paned.set_position(max_position - self._sidebar_width)
 
     def _setup_actions(self) -> None:
         # Keyboard shortcuts for zoom
@@ -245,6 +280,12 @@ class PreviewWindow(Gtk.ApplicationWindow):
             "activate", lambda *_: self._set_sidebar_visible(not self._sidebar_visible)
         )
         self.add_action(action_toggle_sidebar)
+
+        action_toggle_outline = Gio.SimpleAction.new("toggle-outline", None)
+        action_toggle_outline.connect(
+            "activate", lambda *_: self._set_outline_visible(not self._outline_visible)
+        )
+        self.add_action(action_toggle_outline)
 
         action_working_copy = Gio.SimpleAction.new("working-copy", None)
         action_working_copy.connect("activate", lambda *_: self._show_working_copy())
@@ -283,6 +324,29 @@ class PreviewWindow(Gtk.ApplicationWindow):
             self._theme = theme
             save_preferences(theme=theme)
             self.refresh_document()
+
+    def _outline_toggled(self, button: Gtk.ToggleButton) -> None:
+        self._set_outline_visible(button.get_active())
+
+    def _set_outline_visible(self, visible: bool) -> None:
+        if visible == self._outline_visible:
+            # As in _set_sidebar_visible, this also ends the reentrant call
+            # made by the button's "toggled" signal below.
+            return
+        self._outline_visible = visible
+        self._outline.set_visible(visible)
+        if self._outline_button.get_active() != visible:
+            self._outline_button.set_active(visible)
+        save_preferences(outline_visible=visible)
+
+    def _jump_to(self, anchor: str) -> None:
+        # Host-evaluated like the scroll capture below; page JavaScript is
+        # re-disabled in _scroll_restored.
+        script = scroll_to_anchor_script(anchor)
+        self._webview.get_settings().set_enable_javascript(True)
+        self._webview.evaluate_javascript(
+            script, len(script), None, None, None, self._scroll_restored, None
+        )
 
     def _sidebar_toggled(self, button: Gtk.ToggleButton) -> None:
         self._set_sidebar_visible(button.get_active())
@@ -411,6 +475,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
             self.path, self._repo, self._target, self._base, self._mode,
             self._font, self._theme,
         )
+        self._outline.show(headings_for_view(html, self._mode))
         self._pending_scroll_y = restore_scroll_y
         self._webview.load_html(html, base_uri(self.path))
 
@@ -460,11 +525,16 @@ class PreviewWindow(Gtk.ApplicationWindow):
         try:
             is_max = self.is_maximized()
             width, height = self.get_default_size()
+            widths = {}
+            if self._outline_visible:
+                widths["outline_width"] = self._paned.get_position()
+            if self._sidebar_visible:
+                widths["sidebar_width"] = self._sidebar.get_width()
             save_preferences(
                 window_width=width,
                 window_height=height,
                 window_maximized=is_max,
-                sidebar_width=self._paned.get_position(),
+                **widths,
             )
         except Exception:
             pass
@@ -482,6 +552,7 @@ class MdPrevApplication(Gtk.Application):
         self.set_accels_for_action("win.zoom-out", ["<Ctrl>minus", "<Ctrl>KP_Subtract"])
         self.set_accels_for_action("win.zoom-reset", ["<Ctrl>0", "<Ctrl>KP_0"])
         self.set_accels_for_action("win.toggle-sidebar", ["<Ctrl>h"])
+        self.set_accels_for_action("win.toggle-outline", ["F9"])
         self.set_accels_for_action("win.working-copy", ["Escape"])
 
     def do_activate(self) -> None:

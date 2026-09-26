@@ -49,8 +49,12 @@ header bar menu. Zoom level can be adjusted with `Ctrl`+`+` (zoom in),
 `Ctrl`+`-` (zoom out), and `Ctrl`+`0` (reset zoom). Reader preferences (font family, theme,
 zoom level, and window size) are saved globally across sessions. The source file is never modified.
 
-When the open document is inside a git repository, a sidebar button appears in
-the header bar (`Ctrl`+`H`). The sidebar lists the commits that touch the file
+The outline pane on the left (header bar button or `F9`) lists the document's
+headings as a tree. H1 and H2 are shown at first; expand a heading to see its
+subheadings, and choose one to scroll to it. It shows in the Rendered view.
+
+When the open document is inside a git repository, a history button appears in
+the header bar (`Ctrl`+`H`). The history pane on the right lists the commits that touch the file
 and pins a "Working copy" entry on top, marked with a red dot when the file has
 uncommitted changes and a green dot when it matches HEAD. Selecting a commit shows that version of the document; the Rendered / Diff /
 Side by side switch alternates between the formatted document, the unified
@@ -104,7 +108,8 @@ venv/bin/python -m mdprev path/to/document.md
 
 It behaves as described above, with macOS conventions: zoom with `Cmd`+`=`,
 `Cmd`+`-`, and `Cmd`+`0`; font and theme under the **View** menu; the git
-history sidebar with the toolbar button or `Ctrl`+`Cmd`+`S`; and `Escape` (or
+outline with the toolbar button or `Ctrl`+`Cmd`+`S`; the git history with its
+toolbar button or `Ctrl`+`Cmd`+`H`; and `Escape` (or
 **View > Back to Working Copy**) to clear a pin or return to the working copy.
 Preferences are stored in `~/Library/Application Support/MdPrev`.
 
