@@ -1,4 +1,4 @@
-"""GTK/WebKit application shell for MdPrev."""
+"""GTK/WebKit application shell for View Markdown."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ from .outline import OutlinePanel  # noqa: E402
 from .sidebar import HistorySidebar  # noqa: E402
 
 
-APP_ID = "io.github.yszhangit.mdprev"
+APP_ID = "io.github.fixed-42.view-markdown"
 
 
 def choice_row(
@@ -70,7 +70,7 @@ def choice_row(
 
 
 class PreviewWindow(Gtk.ApplicationWindow):
-    def __init__(self, app: "MdPrevApplication", path: Path):
+    def __init__(self, app: "ViewMarkdownApplication", path: Path):
         super().__init__(application=app)
         self.app = app
         self.path = path
@@ -541,7 +541,7 @@ class PreviewWindow(Gtk.ApplicationWindow):
         return False
 
 
-class MdPrevApplication(Gtk.Application):
+class ViewMarkdownApplication(Gtk.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.HANDLES_OPEN)
         self._windows: dict[Path, PreviewWindow] = {}
@@ -579,4 +579,4 @@ class MdPrevApplication(Gtk.Application):
 
 
 def main(argv: list[str] | None = None) -> int:
-    return MdPrevApplication().run(sys.argv if argv is None else argv)
+    return ViewMarkdownApplication().run(sys.argv if argv is None else argv)

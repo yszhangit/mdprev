@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from mdprev.core.navigation import (
+from view_markdown.core.navigation import (
     Allow,
     Block,
     OpenDocument,
@@ -36,7 +36,7 @@ def test_clicking_the_base_directory_itself_is_blocked(tmp_path):
     assert classify_link(tmp_path.as_uri() + "/", tmp_path, True) == Block()
 
 
-def test_markdown_links_open_in_mdprev_on_a_user_gesture(tmp_path):
+def test_markdown_links_open_in_view_markdown_on_a_user_gesture(tmp_path):
     other = tmp_path / "other doc é.md"
     uri = other.as_uri()
 

@@ -2,8 +2,8 @@
 
 from datetime import datetime, timezone
 
-from mdprev.core.git_history import WORKING_COPY, Commit
-from mdprev.core.history_state import HistorySelection
+from view_markdown.core.git_history import WORKING_COPY, Commit
+from view_markdown.core.history_state import HistorySelection
 
 
 def _commit(sha):
@@ -118,7 +118,7 @@ def test_a_pin_is_dropped_when_comparison_becomes_impossible():
 
 import pytest  # noqa: E402
 
-from mdprev.core.history_state import HistoryModel, Row, revision_key  # noqa: E402
+from view_markdown.core.history_state import HistoryModel, Row, revision_key  # noqa: E402
 
 pygit2 = pytest.importorskip("pygit2")
 

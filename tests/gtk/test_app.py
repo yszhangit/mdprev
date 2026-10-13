@@ -1,4 +1,4 @@
-import mdprev.gtk.app as app_module
+import view_markdown.gtk.app as app_module
 from gi.repository import Gtk
 
 
@@ -52,8 +52,8 @@ def test_main_forwards_process_arguments(monkeypatch):
             received.extend(argv)
             return 0
 
-    monkeypatch.setattr(app_module, "MdPrevApplication", FakeApplication)
-    monkeypatch.setattr(app_module.sys, "argv", ["mdprev", "/tmp/example.md"])
+    monkeypatch.setattr(app_module, "ViewMarkdownApplication", FakeApplication)
+    monkeypatch.setattr(app_module.sys, "argv", ["view-markdown", "/tmp/example.md"])
 
     assert app_module.main() == 0
-    assert received == ["mdprev", "/tmp/example.md"]
+    assert received == ["view-markdown", "/tmp/example.md"]

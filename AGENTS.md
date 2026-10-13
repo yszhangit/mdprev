@@ -2,24 +2,72 @@
 
 ## Project purpose
 
-MdPrev is a small, read-only Markdown preview application for Ubuntu 26.04 LTS
-GNOME and macOS 26 on Apple silicon. Keep the application focused,
+View Markdown is a small, read-only Markdown preview application for Ubuntu
+26.04 LTS GNOME and macOS 26 on Apple silicon. Keep the application focused,
 native-looking on each platform, and easy to install.
+
+## Two repositories
+
+All development happens in this repository. It is private and keeps the full
+history, the plans and specs in `docs/`, and this file; its directory and
+remote still carry the application's former name.
+
+The application is published from a second, public repository,
+`fixed-42/view-markdown`, checked out beside this one at `../view-markdown`.
+That repository is a generated copy, never a place to work:
+
+- Never edit `../view-markdown` by hand. Change this repository, commit, and
+  run `packaging/export-public.sh [REF]`, which copies the committed files of
+  `REF` (default `HEAD`) into it.
+- `.gitattributes` lists what is not published (`export-ignore`): `docs/`,
+  `AGENTS.md`, `FEATURE_REQUIREMENTS.md`, the export script, and
+  `.gitattributes` itself. Development documents stay private; add any new
+  one there.
+- Everything else is public: code, comments, tests, fixtures, packaging, and
+  `README.md`, the only published document. Do not refer to the private
+  documents or to internal milestones ("MVP 2") in them. Never put a maintainer's name,
+  handle, e-mail address, machine or home-directory path, or any mention of
+  this private repository in them. The export script refuses to copy a tree
+  that contains the committer's git name, e-mail, login, home path, or this
+  directory's name. That check is a backstop, not a substitute for care.
+- `README.md` is written for users. Notes about process, tooling, or the
+  maintainer's environment belong here or in `docs/`.
+- The application ID and every URL name the public organization:
+  `io.github.fixed-42.view-markdown`,
+  `https://github.com/fixed-42/view-markdown`.
+- Do not commit, tag, or push in `../view-markdown` unless the maintainer asks.
+  It commits under its own repository-local git identity, never the one used
+  here; check `git -C ../view-markdown var GIT_AUTHOR_IDENT` first.
+- The public history is one commit per release ("Release vX.Y.Z"), tagged
+  with the same version as the commit exported from here. The version lives
+  in `view_markdown/__init__.py`.
+- Issues and pull requests arrive on the public repository. Apply an accepted
+  change here, credit its author in the commit message, and export; do not
+  merge it there.
+
+To publish a release:
+
+1. Finish the verification in "Tests and verification" on both platforms.
+2. Update the version, commit, and tag `vX.Y.Z` here.
+3. Run `packaging/export-public.sh vX.Y.Z`.
+4. Run the tests in `../view-markdown` and review `git status` and the diff
+   there.
+5. The maintainer commits, tags, and pushes the public repository.
 
 ## Code layout
 
-- `mdprev/core/`: all toolkit-neutral behavior: rendering, sanitizing,
+- `view_markdown/core/`: all toolkit-neutral behavior: rendering, sanitizing,
   highlighting, git history and comparison, preferences, navigation policy
   (`navigation.py`), window state (`session.py`), and sidebar selection and pin
   rules (`history_state.py`). It must never import `gi`, `objc`, AppKit,
   WebKit, or any other GUI module; `tests/test_core_imports.py` enforces this.
-- `mdprev/gtk/`: the GTK 4 / WebKitGTK 6.0 front end for Linux.
-- `mdprev/macos/`: the AppKit / `WKWebView` front end for macOS (PyObjC).
+- `view_markdown/gtk/`: the GTK 4 / WebKitGTK 6.0 front end for Linux.
+- `view_markdown/macos/`: the AppKit / `WKWebView` front end for macOS (PyObjC).
 - `packaging/linux/`, `packaging/macos/`: install scripts and bundle config.
 - `tests/core/` runs on both platforms; `tests/gtk/` only where PyGObject is
   installed; `tests/macos/` only on macOS.
 
-Every new feature is implemented in `mdprev/core` first, with headless tests.
+Every new feature is implemented in `view_markdown/core` first, with headless tests.
 Front ends only create widgets, bind shortcuts, run timers and file watchers,
 and carry out decisions the core returns. A feature is done when both front
 ends have it, or when the parity table in `FEATURE_REQUIREMENTS.md` section 10
@@ -97,7 +145,7 @@ shortcuts).
   Markdown input as untrusted.
 - Preserve the approximate vertical reading position across automatic reloads.
 - Escape all application-generated error text before placing it in HTML.
-- Keep rendering and decision logic in `mdprev/core` so it can be unit tested
+- Keep rendering and decision logic in `view_markdown/core` so it can be unit tested
   without a display server.
 - Avoid broad exception handling. Convert expected I/O, decoding, parser, and
   subprocess failures into concise user-facing errors and useful diagnostics.
@@ -114,10 +162,10 @@ shortcuts).
 - Provide user-local `packaging/linux/install.sh` and `uninstall.sh` scripts.
 - Installation should target the applicable XDG user directories and must not
   require `sudo` except for installing missing Ubuntu packages.
-- Setting MdPrev as the default Markdown handler must be explicit and reversible.
-- Keep the application ID and desktop-file basename identical. Use
-  `io.github.yzhang.mdprev` provisionally unless the maintainer changes it
-  before release.
+- Setting View Markdown as the default Markdown handler must be explicit and
+  reversible.
+- Keep the application ID and desktop-file basename identical:
+  `io.github.fixed-42.view-markdown`.
 
 ## Scope discipline
 
@@ -138,7 +186,7 @@ For every behavior change:
    (`venv/bin/pytest` on macOS, `python3 -m pytest` on Ubuntu).
 2. Run syntax/static checks configured by the repository.
 3. Launch the application on each platform whose front end changed: Ubuntu
-   26.04 for `mdprev/gtk`, macOS for `mdprev/macos`. A core change affects
+   26.04 for `view_markdown/gtk`, macOS for `view_markdown/macos`. A core change affects
    both.
 4. Test a filename containing spaces and non-ASCII characters.
 5. Test an untrusted document containing raw HTML, JavaScript URLs, remote

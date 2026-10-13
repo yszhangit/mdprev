@@ -1,4 +1,4 @@
-# MdPrev Feature Requirements
+# View Markdown Feature Requirements
 
 Status: approved implementation plan  
 Target: Ubuntu 26.04 LTS (Resolute), GNOME 50, Wayland; macOS 26 on Apple
@@ -7,7 +7,7 @@ Product type: local, read-only Markdown previewer
 
 ## 1. Product goal
 
-MdPrev lets a user open a Markdown file from GNOME Files or the terminal and
+View Markdown lets a user open a Markdown file from GNOME Files or the terminal and
 read a clean rendered preview that updates when the source file is saved.
 
 The product is intentionally narrow. It is not a Markdown editor, document
@@ -19,11 +19,11 @@ platform is in scope.
 
 The code is split into a toolkit-neutral core and one front end per platform:
 
-- `mdprev/core`: reading, rendering, sanitizing, highlighting, git history,
+- `view_markdown/core`: reading, rendering, sanitizing, highlighting, git history,
   comparison, preferences, navigation policy, and window/sidebar state. It
   never imports a GUI toolkit, and a test enforces that.
-- `mdprev/gtk`: the Linux front end described below.
-- `mdprev/macos`: the macOS front end (section 10).
+- `view_markdown/gtk`: the Linux front end described below.
+- `view_markdown/macos`: the macOS front end (section 10).
 
 The Linux runtime stack is:
 
@@ -34,7 +34,7 @@ The Linux runtime stack is:
 - `Gio.FileMonitor` for filesystem change notifications
 - Pygments in MVP 2 only
 - `pygit2` in MVP 4 only, and optional even there: it powers the git history
-  sidebar, and MdPrev runs without it exactly as it did before MVP 4
+  sidebar, and View Markdown runs without it exactly as it did before MVP 4
 
 Expected MVP 1 Ubuntu packages:
 
@@ -58,7 +58,7 @@ MVP 4 additionally requires:
 python3-pygit2
 ```
 
-MdPrev runs without it; the git history sidebar is simply unavailable.
+View Markdown runs without it; the git history sidebar is simply unavailable.
 
 ## 3. MVP 1: basic Markdown display
 
@@ -67,7 +67,7 @@ MdPrev runs without it; the git history sidebar is simply unavailable.
 The application must:
 
 - Accept one or more local Markdown files through GTK/GIO open requests.
-- Support invocation as `mdprev FILE`.
+- Support invocation as `view-markdown FILE`.
 - Register as a handler for `.md` and `.markdown` files in GNOME.
 - Appear in the Files “Open With” application list.
 - Allow the user to make it the default Markdown handler.
@@ -143,17 +143,17 @@ behavior is explicitly implemented and tested.
 
 The repository must provide:
 
-- A launcher/entry point named `mdprev`.
+- A launcher/entry point named `view-markdown`.
 - A valid `.desktop` entry with a `%f` argument.
 - MIME declarations for `text/markdown` and `text/x-markdown`.
 - An SVG application icon.
 - A user-local installation script.
 - A matching uninstall script.
 - Instructions for installing required Ubuntu packages.
-- An explicit option or documented command for setting MdPrev as the default
+- An explicit option or documented command for setting View Markdown as the default
   Markdown application.
 
-Uninstallation must remove only files installed by MdPrev. Changing the default
+Uninstallation must remove only files installed by View Markdown. Changing the default
 association must be reversible without overwriting unrelated MIME preferences.
 
 ### 3.6 MVP 1 acceptance criteria
@@ -419,9 +419,9 @@ understand and maintain.
 
 ## 10. macOS support and platform parity
 
-MdPrev also runs on macOS 26 on Apple silicon (Intel Macs and older macOS
+View Markdown also runs on macOS 26 on Apple silicon (Intel Macs and older macOS
 releases are out of scope). The macOS front end is native: AppKit and
-`WKWebView` through PyObjC, over the same `mdprev/core` as Linux. Every product
+`WKWebView` through PyObjC, over the same `view_markdown/core` as Linux. Every product
 requirement in sections 3 to 7 applies on macOS, with the platform
 equivalents below; the safety rules in section 3.4 apply unchanged.
 
@@ -439,19 +439,19 @@ equivalents below; the safety rules in section 3.4 apply unchanged.
 | `F9` outline (the GNOME sidebar key) | `Ctrl`+`Cmd`+`S` (the macOS sidebar key) |
 | `Ctrl`+`H` history | `Ctrl`+`Cmd`+`H` (`Cmd`+`H` hides the app) |
 | `Escape` (no menu item) | `Escape`, also View > Back to Working Copy |
-| `~/.config/mdprev/preferences.json` | `~/Library/Application Support/MdPrev/preferences.json` |
-| Ubuntu packages, `install.sh` | `MdPrev.app` built with py2app; `cmark-gfm` from Homebrew |
+| `~/.config/view-markdown/preferences.json` | `~/Library/Application Support/View Markdown/preferences.json` |
+| Ubuntu packages, `packaging/linux/install.sh` | `packaging/macos/install.sh`: `View Markdown.app` built locally with py2app into `~/Applications`; `cmark-gfm` from Homebrew |
 
 ### 10.2 Parity rule
 
-New behavior is implemented in `mdprev/core` first, with headless tests, and
+New behavior is implemented in `view_markdown/core` first, with headless tests, and
 each front end only connects widgets to it. A feature is complete when both
 front ends provide it, or when the table below records the gap.
 
 | Feature | Linux | macOS |
 |---|---|---|
 | MVP 1: display, live reload, safety | Done | Done |
-| MVP 1: installation, Finder / "Open With" | Done | Planned (needs the app bundle) |
+| MVP 1: installation, Finder / "Open With" | Done | Done (`packaging/macos/install.sh`; verify opening from Finder) |
 | MVP 2: syntax highlighting | Done | Done |
 | MVP 3: font, theme, zoom | Done | Done |
 | MVP 4: git history sidebar | Done | Done |
@@ -464,7 +464,7 @@ The macOS front end is complete when, on macOS 26 on Apple silicon, the
 acceptance criteria of MVP 1 to MVP 5 pass with the equivalents in 10.1, and:
 
 1. A Markdown file opens from Finder (double-click and "Open With"), the Dock,
-   and `open -a MdPrev FILE`.
+   and `open -a "View Markdown" FILE`.
 2. `cmark-gfm` is found when the app is launched from Finder, whose PATH
    excludes Homebrew.
 3. The core test suite passes on macOS; the GTK tests are skipped there.

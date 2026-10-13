@@ -1,4 +1,4 @@
-# macOS development environment for MdPrev. Linux uses Ubuntu packages instead
+# macOS development environment for View Markdown. Linux uses Ubuntu packages instead
 # (see README.md) and has no pip requirements.
 #
 #   brew install cmark-gfm

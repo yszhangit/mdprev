@@ -13,6 +13,7 @@ from AppKit import (
     NSSplitViewController,
     NSSplitViewItem,
     NSToolbar,
+    NSToolbarDisplayModeIconOnly,
     NSToolbarFlexibleSpaceItemIdentifier,
     NSToolbarItem,
     NSViewController,
@@ -62,8 +63,8 @@ from .watcher import FileWatcher
 # Matches the GTK front end: long enough to coalesce an editor's burst of
 # write/rename events into one reload.
 RELOAD_DELAY_SECONDS = 0.18
-_HISTORY_ITEM = "io.github.yszhangit.mdprev.history"
-_OUTLINE_ITEM = "io.github.yszhangit.mdprev.outline"
+_HISTORY_ITEM = "io.github.fixed-42.view-markdown.history"
+_OUTLINE_ITEM = "io.github.fixed-42.view-markdown.outline"
 
 
 class PreviewWindow:
@@ -90,7 +91,7 @@ class PreviewWindow:
         # WKWebView grants file access only to pages loaded from files, so the
         # rendered HTML is written here and loaded with read access to the
         # local images the sanitizer allowed.
-        self._scratch = Path(tempfile.mkdtemp(prefix="mdprev-"))
+        self._scratch = Path(tempfile.mkdtemp(prefix="view-markdown-"))
         self._view_file = self._scratch / "view.html"
 
         self._bridge = _WindowBridge.alloc().init()
@@ -127,9 +128,9 @@ class PreviewWindow:
             self._sidebar_item = self._pane(self.sidebar.view, sidebar=False)
             self._split.addSplitViewItem_(self._sidebar_item)
         self.window.setContentViewController_(self._split)
-        toolbar = NSToolbar.alloc().initWithIdentifier_("io.github.yszhangit.mdprev")
+        toolbar = NSToolbar.alloc().initWithIdentifier_("io.github.fixed-42.view-markdown")
         toolbar.setDelegate_(self._bridge)
-        toolbar.setDisplayMode_(1)  # NSToolbarDisplayModeIconOnly
+        toolbar.setDisplayMode_(NSToolbarDisplayModeIconOnly)
         self.window.setToolbar_(toolbar)
         self.window.setToolbarStyle_(NSWindowToolbarStyleUnified)
         # Setting a content view controller resizes the window to the
@@ -145,11 +146,10 @@ class PreviewWindow:
         self._split.view().layoutSubtreeIfNeeded()
         split_view.setPosition_ofDividerAtIndex_(prefs.get("outline_width", 240), 0)
         if self._sidebar_item is not None:
+            # Panes abut: the dividers of a split view controller take no
+            # width of their own, so the history pane starts at its divider.
             split_view.setPosition_ofDividerAtIndex_(
-                split_view.frame().size.width
-                - prefs.get("sidebar_width", 280)
-                - split_view.dividerThickness(),
-                1,
+                split_view.frame().size.width - prefs.get("sidebar_width", 280), 1
             )
         self._outline_item.setCollapsed_(not prefs.get("outline_visible", False))
         if self._sidebar_item is not None:
@@ -394,10 +394,14 @@ class PreviewWindow:
             "window_width": int(size.width),
             "window_height": int(size.height),
         }
+        # Measure the panes, not their content views: macOS insets a sidebar's
+        # content inside its pane, so saving the content width would shrink
+        # the pane a little on every launch.
+        panes = self._split.splitView().arrangedSubviews()
         if self.sidebar_visible:
-            prefs["sidebar_width"] = int(self.sidebar.view.frame().size.width)
+            prefs["sidebar_width"] = int(panes[len(panes) - 1].frame().size.width)
         if self.outline_visible:
-            prefs["outline_width"] = int(self.outline.view.frame().size.width)
+            prefs["outline_width"] = int(panes[0].frame().size.width)
         save_preferences(**prefs)
         shutil.rmtree(self._scratch, ignore_errors=True)
         self._webview.setNavigationDelegate_(None)
@@ -475,23 +479,23 @@ class _WindowBridge(NSObject):
         if self.owner is not None:
             self.owner.show_working_copy()
 
-    def mdprevZoomIn_(self, _sender):
+    def viewMarkdownZoomIn_(self, _sender):
         if self.owner is not None:
             self.owner.zoom_in()
 
-    def mdprevZoomOut_(self, _sender):
+    def viewMarkdownZoomOut_(self, _sender):
         if self.owner is not None:
             self.owner.zoom_out()
 
-    def mdprevZoomReset_(self, _sender):
+    def viewMarkdownZoomReset_(self, _sender):
         if self.owner is not None:
             self.owner.zoom_reset()
 
-    def mdprevSelectFont_(self, sender):
+    def viewMarkdownSelectFont_(self, sender):
         if self.owner is not None:
             self.owner.set_font(sender.representedObject())
 
-    def mdprevSelectTheme_(self, sender):
+    def viewMarkdownSelectTheme_(self, sender):
         if self.owner is not None:
             self.owner.set_theme(sender.representedObject())
 
@@ -500,9 +504,9 @@ class _WindowBridge(NSObject):
         if owner is None:
             return False
         action = item.action()
-        if action == "mdprevSelectFont:":
+        if action == "viewMarkdownSelectFont:":
             item.setState_(1 if item.representedObject() == owner.font else 0)
-        elif action == "mdprevSelectTheme:":
+        elif action == "viewMarkdownSelectTheme:":
             item.setState_(1 if item.representedObject() == owner.theme else 0)
         elif action == "toggleOutline:":
             item.setTitle_("Hide Outline" if owner.outline_visible else "Show Outline")

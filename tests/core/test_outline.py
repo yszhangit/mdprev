@@ -1,8 +1,8 @@
 """Heading outline shared by both front ends."""
 
-from mdprev.core import session
-from mdprev.core.git_history import WORKING_COPY
-from mdprev.core.outline import (
+from view_markdown.core import session
+from view_markdown.core.git_history import WORKING_COPY
+from view_markdown.core.outline import (
     EMPTY_MESSAGE,
     UNAVAILABLE_MESSAGE,
     Heading,

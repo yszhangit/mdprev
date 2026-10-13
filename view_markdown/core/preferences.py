@@ -1,4 +1,4 @@
-"""Reader preferences management for MdPrev."""
+"""Reader preferences management for View Markdown."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from pathlib import Path
 import sys
 from typing import Any
 
-CONFIG_DIR_NAME = "mdprev"
-MACOS_CONFIG_DIR_NAME = "MdPrev"
+CONFIG_DIR_NAME = "view-markdown"
+MACOS_CONFIG_DIR_NAME = "View Markdown"
 CONFIG_FILE_NAME = "preferences.json"
 
 DEFAULT_FONT = "system"

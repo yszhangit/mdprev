@@ -1,0 +1,7 @@
+# Not published: packaging/export-public.sh uses `git archive`, which leaves
+# these out of the public repository (see AGENTS.md, "Two repositories").
+/.gitattributes export-ignore
+/AGENTS.md export-ignore
+/FEATURE_REQUIREMENTS.md export-ignore
+/docs export-ignore
+/packaging/export-public.sh export-ignore

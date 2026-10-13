@@ -2,8 +2,8 @@
 
 import pytest
 
-from mdprev.core.outline import UNAVAILABLE_MESSAGE, Heading
-from mdprev.gtk.outline import OutlinePanel
+from view_markdown.core.outline import UNAVAILABLE_MESSAGE, Heading
+from view_markdown.gtk.outline import OutlinePanel
 
 HEADINGS = [
     Heading(1, "Guide", "guide"),

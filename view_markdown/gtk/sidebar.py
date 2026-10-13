@@ -25,27 +25,27 @@ from ..core.history_state import MODES, HistoryModel, revision_key as _key  # no
 # inside the WebKit document.  The palette fallbacks come first so that a theme
 # without the named colors still renders a colored dot.
 _CSS = b"""
-.mdprev-dot {
+.view-markdown-dot {
   font-size: 12px;
 }
-.mdprev-dot-modified {
+.view-markdown-dot-modified {
   color: #e01b24;
   color: @error_color;
 }
-.mdprev-dot-clean {
+.view-markdown-dot-clean {
   color: #2ec27e;
   color: @success_color;
 }
-.mdprev-sidebar-message {
+.view-markdown-sidebar-message {
   padding: 12px;
 }
-.mdprev-pin {
+.view-markdown-pin {
   min-height: 0;
   min-width: 0;
   padding: 2px;
   opacity: 0.45;
 }
-.mdprev-pin-active {
+.view-markdown-pin-active {
   opacity: 1;
   color: #3584e4;
   color: @accent_color;
@@ -151,10 +151,10 @@ class HistorySidebar(Gtk.Box):
     def _apply_status(self, modified: bool) -> None:
         if not hasattr(self, "_dot_label"):
             return
-        self._dot_label.remove_css_class("mdprev-dot-modified")
-        self._dot_label.remove_css_class("mdprev-dot-clean")
+        self._dot_label.remove_css_class("view-markdown-dot-modified")
+        self._dot_label.remove_css_class("view-markdown-dot-clean")
         self._dot_label.add_css_class(
-            "mdprev-dot-modified" if modified else "mdprev-dot-clean"
+            "view-markdown-dot-modified" if modified else "view-markdown-dot-clean"
         )
         text = "Modified" if modified else "Unchanged"
         self._status_label.set_text(text)
@@ -209,7 +209,7 @@ class HistorySidebar(Gtk.Box):
 
         status_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         self._dot_label = Gtk.Label(label="●")
-        self._dot_label.add_css_class("mdprev-dot")
+        self._dot_label.add_css_class("view-markdown-dot")
         self._status_label = Gtk.Label(label="Unchanged", xalign=0.0)
         self._status_label.add_css_class("dim-label")
         status_box.append(self._dot_label)
@@ -256,7 +256,7 @@ class HistorySidebar(Gtk.Box):
     def _pin_button(self, revision: Revision) -> Gtk.Button:
         button = Gtk.Button(icon_name="view-pin-symbolic")
         button.add_css_class("flat")
-        button.add_css_class("mdprev-pin")
+        button.add_css_class("view-markdown-pin")
         button.set_valign(Gtk.Align.CENTER)
         # Hidden until _update_pins decides there is something to compare.
         button.set_visible(False)
@@ -288,7 +288,7 @@ class HistorySidebar(Gtk.Box):
         label = Gtk.Label(label=text, xalign=0.0)
         label.set_wrap(True)
         label.add_css_class("dim-label")
-        label.add_css_class("mdprev-sidebar-message")
+        label.add_css_class("view-markdown-sidebar-message")
         row.set_child(label)
         return row
 
@@ -331,9 +331,9 @@ class HistorySidebar(Gtk.Box):
             button.set_visible(self._state.pin_visible(button.revision))
             active = key == pinned_key
             if active:
-                button.add_css_class("mdprev-pin-active")
+                button.add_css_class("view-markdown-pin-active")
             else:
-                button.remove_css_class("mdprev-pin-active")
+                button.remove_css_class("view-markdown-pin-active")
             text = (
                 "Stop comparing from this version" if active
                 else "Compare from this version"
