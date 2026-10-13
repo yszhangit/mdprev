@@ -4,8 +4,8 @@ import re
 
 import pytest
 
-from mdprev.core import render
-from mdprev.core.render import RenderError, error_document, read_source, render_markdown, sanitize_fragment
+from view_markdown.core import render
+from view_markdown.core.render import RenderError, error_document, read_source, render_markdown, sanitize_fragment
 
 
 def test_gfm_features_and_complete_document(tmp_path: Path):
@@ -200,7 +200,7 @@ def test_render_diff_does_not_invoke_cmark(monkeypatch):
     assert "+new" in unescape(re.sub(r"<[^>]+>", "", render.render_diff("@@ -1 +1 @@\n-old\n+new\n")))
 
 
-from mdprev.core.diffmodel import Comparison, DiffLine, FileStats, Hunk, Side  # noqa: E402
+from view_markdown.core.diffmodel import Comparison, DiffLine, FileStats, Hunk, Side  # noqa: E402
 
 
 def make_comparison(**overrides):

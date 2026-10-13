@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from mdprev.core.preferences import (
+from view_markdown.core.preferences import (
     DEFAULT_FONT,
     DEFAULT_HISTORY_LIMIT,
     DEFAULT_SIDEBAR_VISIBLE,
@@ -157,7 +157,7 @@ def test_out_of_range_history_limit_is_rejected(monkeypatch, tmp_path: Path):
 
 def test_wrongly_typed_sidebar_values_fall_back_to_defaults(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    config = tmp_path / "mdprev" / "preferences.json"
+    config = tmp_path / "view-markdown" / "preferences.json"
     config.parent.mkdir(parents=True)
     config.write_text(
         '{"sidebar_visible": "yes", "sidebar_width": "wide", "history_limit": 1.5}',
@@ -174,26 +174,26 @@ def test_wrongly_typed_sidebar_values_fall_back_to_defaults(monkeypatch, tmp_pat
 def test_config_path_defaults_to_xdg_on_linux(monkeypatch, tmp_path: Path):
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setattr("mdprev.core.preferences.sys.platform", "linux")
+    monkeypatch.setattr("view_markdown.core.preferences.sys.platform", "linux")
 
-    assert get_config_file_path() == tmp_path / ".config" / "mdprev" / "preferences.json"
+    assert get_config_file_path() == tmp_path / ".config" / "view-markdown" / "preferences.json"
 
 
 def test_config_path_defaults_to_application_support_on_macos(monkeypatch, tmp_path: Path):
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setattr("mdprev.core.preferences.sys.platform", "darwin")
+    monkeypatch.setattr("view_markdown.core.preferences.sys.platform", "darwin")
 
     assert get_config_file_path() == (
-        tmp_path / "Library" / "Application Support" / "MdPrev" / "preferences.json"
+        tmp_path / "Library" / "Application Support" / "View Markdown" / "preferences.json"
     )
 
 
 def test_explicit_xdg_config_home_wins_on_macos(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    monkeypatch.setattr("mdprev.core.preferences.sys.platform", "darwin")
+    monkeypatch.setattr("view_markdown.core.preferences.sys.platform", "darwin")
 
-    assert get_config_file_path() == tmp_path / "mdprev" / "preferences.json"
+    assert get_config_file_path() == tmp_path / "view-markdown" / "preferences.json"
 
 
 def test_outline_preferences_default_and_round_trip(monkeypatch, tmp_path: Path):

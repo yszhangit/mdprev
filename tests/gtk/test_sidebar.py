@@ -4,8 +4,8 @@ import pytest
 
 pygit2 = pytest.importorskip("pygit2")
 
-from mdprev.core.git_history import WORKING_COPY  # noqa: E402
-from mdprev.gtk.sidebar import HistorySidebar  # noqa: E402
+from view_markdown.core.git_history import WORKING_COPY  # noqa: E402
+from view_markdown.gtk.sidebar import HistorySidebar  # noqa: E402
 
 
 def visible_pins(sidebar):
@@ -112,7 +112,7 @@ def test_pinning_alone_reports_nothing(repo):
     sidebar._pin_buttons[first].emit("clicked")
 
     assert calls == []
-    assert sidebar._pin_buttons[first].has_css_class("mdprev-pin-active")
+    assert sidebar._pin_buttons[first].has_css_class("view-markdown-pin-active")
     assert sidebar._state.pinned.sha == first
 
 
@@ -148,7 +148,7 @@ def test_moving_the_pin_keeps_one_pin(repo):
     sidebar._pin_buttons[first].emit("clicked")
     sidebar._pin_buttons[second].emit("clicked")
 
-    active = {k for k, b in sidebar._pin_buttons.items() if b.has_css_class("mdprev-pin-active")}
+    active = {k for k, b in sidebar._pin_buttons.items() if b.has_css_class("view-markdown-pin-active")}
     assert active == {second}
 
 

@@ -7,9 +7,9 @@ from Foundation import NSURL, NSIndexSet
 from WebKit import WKNavigationTypeLinkActivated, WKNavigationTypeOther
 
 from macos_helpers import spin, wait_for
-from mdprev.core.git_history import WORKING_COPY
-from mdprev.core.preferences import save_preferences
-from mdprev.macos.window import PreviewWindow
+from view_markdown.core.git_history import WORKING_COPY
+from view_markdown.core.preferences import save_preferences
+from view_markdown.macos.window import PreviewWindow
 
 pygit2 = pytest.importorskip("pygit2")
 
@@ -140,7 +140,7 @@ def test_navigation_policy(open_window, tmp_path):
 
 
 def test_zoom_font_and_theme_persist(open_window, tmp_path):
-    from mdprev.core.preferences import load_preferences
+    from view_markdown.core.preferences import load_preferences
 
     window = open_window(write(tmp_path / "doc.md", "# T\n"))
 
@@ -191,7 +191,7 @@ def test_history_sidebar_selects_compares_and_escapes(open_window, tmp_path):
 
 
 def test_closing_saves_the_window_size_and_cleans_up(open_window, tmp_path, fake_app):
-    from mdprev.core.preferences import load_preferences
+    from view_markdown.core.preferences import load_preferences
 
     window = open_window(write(tmp_path / "doc.md", "# T\n"))
     window.window.setContentSize_((800, 500))
@@ -284,7 +284,7 @@ def test_closing_during_a_pending_refresh_is_safe(open_window, tmp_path, fake_ap
 
 
 def test_outline_and_history_visibility_are_remembered(open_window, tmp_path):
-    from mdprev.core.preferences import load_preferences
+    from view_markdown.core.preferences import load_preferences
 
     doc = _repo(tmp_path, ["# First\n"])
     window = open_window(doc)
@@ -303,7 +303,7 @@ def test_outline_and_history_visibility_are_remembered(open_window, tmp_path):
 
 
 def test_pane_widths_survive_reopening(open_window, tmp_path):
-    from mdprev.core.preferences import load_preferences
+    from view_markdown.core.preferences import load_preferences
 
     save_preferences(
         outline_visible=True, sidebar_visible=True, outline_width=300, sidebar_width=320

@@ -63,8 +63,8 @@ from .watcher import FileWatcher
 # Matches the GTK front end: long enough to coalesce an editor's burst of
 # write/rename events into one reload.
 RELOAD_DELAY_SECONDS = 0.18
-_HISTORY_ITEM = "io.github.yszhangit.mdprev.history"
-_OUTLINE_ITEM = "io.github.yszhangit.mdprev.outline"
+_HISTORY_ITEM = "io.github.fixed-42.view-markdown.history"
+_OUTLINE_ITEM = "io.github.fixed-42.view-markdown.outline"
 
 
 class PreviewWindow:
@@ -91,7 +91,7 @@ class PreviewWindow:
         # WKWebView grants file access only to pages loaded from files, so the
         # rendered HTML is written here and loaded with read access to the
         # local images the sanitizer allowed.
-        self._scratch = Path(tempfile.mkdtemp(prefix="mdprev-"))
+        self._scratch = Path(tempfile.mkdtemp(prefix="view-markdown-"))
         self._view_file = self._scratch / "view.html"
 
         self._bridge = _WindowBridge.alloc().init()
@@ -128,7 +128,7 @@ class PreviewWindow:
             self._sidebar_item = self._pane(self.sidebar.view, sidebar=False)
             self._split.addSplitViewItem_(self._sidebar_item)
         self.window.setContentViewController_(self._split)
-        toolbar = NSToolbar.alloc().initWithIdentifier_("io.github.yszhangit.mdprev")
+        toolbar = NSToolbar.alloc().initWithIdentifier_("io.github.fixed-42.view-markdown")
         toolbar.setDelegate_(self._bridge)
         toolbar.setDisplayMode_(NSToolbarDisplayModeIconOnly)
         self.window.setToolbar_(toolbar)
@@ -479,23 +479,23 @@ class _WindowBridge(NSObject):
         if self.owner is not None:
             self.owner.show_working_copy()
 
-    def mdprevZoomIn_(self, _sender):
+    def viewMarkdownZoomIn_(self, _sender):
         if self.owner is not None:
             self.owner.zoom_in()
 
-    def mdprevZoomOut_(self, _sender):
+    def viewMarkdownZoomOut_(self, _sender):
         if self.owner is not None:
             self.owner.zoom_out()
 
-    def mdprevZoomReset_(self, _sender):
+    def viewMarkdownZoomReset_(self, _sender):
         if self.owner is not None:
             self.owner.zoom_reset()
 
-    def mdprevSelectFont_(self, sender):
+    def viewMarkdownSelectFont_(self, sender):
         if self.owner is not None:
             self.owner.set_font(sender.representedObject())
 
-    def mdprevSelectTheme_(self, sender):
+    def viewMarkdownSelectTheme_(self, sender):
         if self.owner is not None:
             self.owner.set_theme(sender.representedObject())
 
@@ -504,9 +504,9 @@ class _WindowBridge(NSObject):
         if owner is None:
             return False
         action = item.action()
-        if action == "mdprevSelectFont:":
+        if action == "viewMarkdownSelectFont:":
             item.setState_(1 if item.representedObject() == owner.font else 0)
-        elif action == "mdprevSelectTheme:":
+        elif action == "viewMarkdownSelectTheme:":
             item.setState_(1 if item.representedObject() == owner.theme else 0)
         elif action == "toggleOutline:":
             item.setTitle_("Hide Outline" if owner.outline_visible else "Show Outline")

@@ -52,7 +52,7 @@ class FileWatcher:
         self._on_change = on_change
         self._stopped = threading.Event()
         self._thread = threading.Thread(
-            target=self._run, name=f"mdprev-watch {path.name}", daemon=True
+            target=self._run, name=f"view-markdown-watch{path.name}", daemon=True
         )
         self._thread.start()
 

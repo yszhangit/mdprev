@@ -36,7 +36,7 @@ class OpenExternal:
 
 @dataclass(frozen=True)
 class OpenDocument:
-    """Ignore the navigation and open path in an MdPrev window."""
+    """Ignore the navigation and open path in a View Markdown window."""
 
     path: Path
 

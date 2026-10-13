@@ -1,4 +1,4 @@
-# MdPrev fixture
+# View Markdown fixture
 
 This has **strong**, *emphasis*, `inline code`, and a [safe link](https://example.com).
 

@@ -2,8 +2,8 @@
 
 from datetime import datetime, timezone
 
-from mdprev.core import session
-from mdprev.core.git_history import WORKING_COPY, Commit
+from view_markdown.core import session
+from view_markdown.core.git_history import WORKING_COPY, Commit
 
 
 def _commit(sha="a1b2c3d" + "0" * 33):

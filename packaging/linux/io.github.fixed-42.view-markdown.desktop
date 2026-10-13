@@ -1,11 +1,11 @@
 [Desktop Entry]
 Type=Application
-Name=MdPrev
+Name=View Markdown
 Comment=Read-only Markdown preview
-Icon=io.github.yszhangit.mdprev
-Exec=mdprev %f
+Icon=io.github.fixed-42.view-markdown
+Exec=view-markdown %f
 Terminal=false
 Categories=Office;Viewer;GTK;
 MimeType=text/markdown;text/x-markdown;
 StartupNotify=true
-StartupWMClass=io.github.yszhangit.mdprev
+StartupWMClass=io.github.fixed-42.view-markdown

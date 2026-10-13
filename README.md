@@ -1,7 +1,7 @@
-# MdPrev
+# View Markdown
 
-MdPrev is a small, read-only Markdown previewer for Ubuntu 26.04 GNOME. It
-uses the system GTK 4, WebKitGTK 6.0, and cmark-gfm packages. A native macOS
+View Markdown is a small, read-only Markdown previewer for Ubuntu 26.04 GNOME.
+It uses the system GTK 4, WebKitGTK 6.0, and cmark-gfm packages. A native macOS
 version (AppKit and WKWebView over the same core) runs from a source checkout;
 see [macOS development](#macos-development).
 
@@ -13,7 +13,7 @@ Install the Ubuntu runtime packages:
 sudo apt install cmark-gfm gir1.2-gtk-4.0 gir1.2-webkit-6.0 python3-pygments python3-pygit2
 ```
 
-Then install MdPrev for the current user:
+Then install View Markdown for the current user:
 
 ```sh
 packaging/linux/install.sh
@@ -22,14 +22,14 @@ packaging/linux/install.sh
 Open a Markdown file from Files' **Open With** menu, or run:
 
 ```sh
-mdprev path/to/document.md
+view-markdown path/to/document.md
 ```
 
 To explicitly make it the default Markdown handler:
 
 ```sh
-xdg-mime default io.github.yszhangit.mdprev.desktop text/markdown
-xdg-mime default io.github.yszhangit.mdprev.desktop text/x-markdown
+xdg-mime default io.github.fixed-42.view-markdown.desktop text/markdown
+xdg-mime default io.github.fixed-42.view-markdown.desktop text/x-markdown
 ```
 
 The previous default can be restored with `xdg-mime default
@@ -80,7 +80,7 @@ opened, so a commit created elsewhere while the window is open appears the next
 time it is opened. Relative images in a historic version resolve against the
 current working tree, so an image deleted since that commit will not load.
 
-`python3-pygit2` is optional. Without it MdPrev works exactly as before and the
+`python3-pygit2` is optional. Without it View Markdown works exactly as before and the
 sidebar is unavailable.
 
 ## Uninstall
@@ -103,7 +103,7 @@ venv/bin/pip install -r packaging/macos/requirements.txt
 Then open a document:
 
 ```sh
-venv/bin/python -m mdprev path/to/document.md
+venv/bin/python -m view_markdown path/to/document.md
 ```
 
 It behaves as described above, with macOS conventions: zoom with `Cmd`+`=`,
@@ -111,10 +111,10 @@ It behaves as described above, with macOS conventions: zoom with `Cmd`+`=`,
 outline with its toolbar button or `Ctrl`+`Cmd`+`S`; the git history with its
 toolbar button or `Ctrl`+`Cmd`+`H`; and `Escape` (or
 **View > Back to Working Copy**) to clear a pin or return to the working copy.
-Preferences are stored in `~/Library/Application Support/MdPrev`.
+Preferences are stored in `~/Library/Application Support/View Markdown`.
 
 Run the tests with `venv/bin/pytest`; the GTK tests are skipped on macOS.
 
 ## License
 
-MdPrev is available under the [MIT License](LICENSE).
+View Markdown is available under the [MIT License](LICENSE).

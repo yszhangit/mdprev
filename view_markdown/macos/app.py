@@ -1,4 +1,4 @@
-"""NSApplication shell for MdPrev on macOS."""
+"""NSApplication shell for View Markdown on macOS."""
 
 from __future__ import annotations
 
@@ -22,13 +22,13 @@ from PyObjCTools import AppHelper
 
 from .window import PreviewWindow
 
-APP_NAME = "MdPrev"
+APP_NAME = "View Markdown"
 
 _FONTS = (("system", "System"), ("sans", "Sans"), ("serif", "Serif"), ("mono", "Monospace"))
 _THEMES = (("system", "System"), ("light", "Light"), ("dark", "Dark"), ("sepia", "Sepia"))
 
 
-class MdPrevApplication:
+class ViewMarkdownApplication:
     def __init__(self, paths: list[Path]):
         self._windows: dict[Path, PreviewWindow] = {}
         self._initial_paths = paths
@@ -77,7 +77,7 @@ class _AppDelegate(NSObject):
         self.owner.launched()
 
     def application_openURLs_(self, _app, urls):
-        # Finder "Open With", the Dock, and `open -a MdPrev FILE`.
+        # Finder "Open With", the Dock, and `open -a "View Markdown" FILE`.
         for url in urls:
             if url.isFileURL():
                 self.owner.open_path(Path(url.path()))
@@ -139,12 +139,12 @@ def _main_menu() -> NSMenu:
         _item("Select All", "selectAll:", "a"),
     ]))
     main.addItem_(_submenu("View", [
-        _item("Zoom In", "mdprevZoomIn:", "="),
-        _item("Zoom Out", "mdprevZoomOut:", "-"),
-        _item("Actual Size", "mdprevZoomReset:", "0"),
+        _item("Zoom In", "viewMarkdownZoomIn:", "="),
+        _item("Zoom Out", "viewMarkdownZoomOut:", "-"),
+        _item("Actual Size", "viewMarkdownZoomReset:", "0"),
         NSMenuItem.separatorItem(),
-        _submenu("Font", _choices("mdprevSelectFont:", _FONTS)),
-        _submenu("Theme", _choices("mdprevSelectTheme:", _THEMES)),
+        _submenu("Font", _choices("viewMarkdownSelectFont:", _FONTS)),
+        _submenu("Theme", _choices("viewMarkdownSelectTheme:", _THEMES)),
         NSMenuItem.separatorItem(),
         _item("Show Outline", "toggleOutline:", "s",
               NSEventModifierFlagCommand | NSEventModifierFlagControl),
@@ -170,4 +170,4 @@ def main(argv: list[str] | None = None) -> int:
     argv = sys.argv if argv is None else argv
     # Launch Services may pass a process serial number argument to bundles.
     paths = [Path(arg) for arg in argv[1:] if not arg.startswith("-psn_")]
-    return MdPrevApplication(paths).run()
+    return ViewMarkdownApplication(paths).run()

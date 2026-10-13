@@ -2,24 +2,24 @@
 
 ## Project purpose
 
-MdPrev is a small, read-only Markdown preview application for Ubuntu 26.04 LTS
-GNOME and macOS 26 on Apple silicon. Keep the application focused,
+View Markdown is a small, read-only Markdown preview application for Ubuntu
+26.04 LTS GNOME and macOS 26 on Apple silicon. Keep the application focused,
 native-looking on each platform, and easy to install.
 
 ## Code layout
 
-- `mdprev/core/`: all toolkit-neutral behavior: rendering, sanitizing,
+- `view_markdown/core/`: all toolkit-neutral behavior: rendering, sanitizing,
   highlighting, git history and comparison, preferences, navigation policy
   (`navigation.py`), window state (`session.py`), and sidebar selection and pin
   rules (`history_state.py`). It must never import `gi`, `objc`, AppKit,
   WebKit, or any other GUI module; `tests/test_core_imports.py` enforces this.
-- `mdprev/gtk/`: the GTK 4 / WebKitGTK 6.0 front end for Linux.
-- `mdprev/macos/`: the AppKit / `WKWebView` front end for macOS (PyObjC).
+- `view_markdown/gtk/`: the GTK 4 / WebKitGTK 6.0 front end for Linux.
+- `view_markdown/macos/`: the AppKit / `WKWebView` front end for macOS (PyObjC).
 - `packaging/linux/`, `packaging/macos/`: install scripts and bundle config.
 - `tests/core/` runs on both platforms; `tests/gtk/` only where PyGObject is
   installed; `tests/macos/` only on macOS.
 
-Every new feature is implemented in `mdprev/core` first, with headless tests.
+Every new feature is implemented in `view_markdown/core` first, with headless tests.
 Front ends only create widgets, bind shortcuts, run timers and file watchers,
 and carry out decisions the core returns. A feature is done when both front
 ends have it, or when the parity table in `FEATURE_REQUIREMENTS.md` section 10
@@ -97,7 +97,7 @@ shortcuts).
   Markdown input as untrusted.
 - Preserve the approximate vertical reading position across automatic reloads.
 - Escape all application-generated error text before placing it in HTML.
-- Keep rendering and decision logic in `mdprev/core` so it can be unit tested
+- Keep rendering and decision logic in `view_markdown/core` so it can be unit tested
   without a display server.
 - Avoid broad exception handling. Convert expected I/O, decoding, parser, and
   subprocess failures into concise user-facing errors and useful diagnostics.
@@ -114,10 +114,10 @@ shortcuts).
 - Provide user-local `packaging/linux/install.sh` and `uninstall.sh` scripts.
 - Installation should target the applicable XDG user directories and must not
   require `sudo` except for installing missing Ubuntu packages.
-- Setting MdPrev as the default Markdown handler must be explicit and reversible.
-- Keep the application ID and desktop-file basename identical. Use
-  `io.github.yzhang.mdprev` provisionally unless the maintainer changes it
-  before release.
+- Setting View Markdown as the default Markdown handler must be explicit and
+  reversible.
+- Keep the application ID and desktop-file basename identical:
+  `io.github.fixed-42.view-markdown`.
 
 ## Scope discipline
 
@@ -138,7 +138,7 @@ For every behavior change:
    (`venv/bin/pytest` on macOS, `python3 -m pytest` on Ubuntu).
 2. Run syntax/static checks configured by the repository.
 3. Launch the application on each platform whose front end changed: Ubuntu
-   26.04 for `mdprev/gtk`, macOS for `mdprev/macos`. A core change affects
+   26.04 for `view_markdown/gtk`, macOS for `view_markdown/macos`. A core change affects
    both.
 4. Test a filename containing spaces and non-ASCII characters.
 5. Test an untrusted document containing raw HTML, JavaScript URLs, remote
