@@ -440,7 +440,7 @@ equivalents below; the safety rules in section 3.4 apply unchanged.
 | `Ctrl`+`H` history | `Ctrl`+`Cmd`+`H` (`Cmd`+`H` hides the app) |
 | `Escape` (no menu item) | `Escape`, also View > Back to Working Copy |
 | `~/.config/view-markdown/preferences.json` | `~/Library/Application Support/View Markdown/preferences.json` |
-| Ubuntu packages, `install.sh` | `View Markdown.app` built with py2app; `cmark-gfm` from Homebrew |
+| Ubuntu packages, `packaging/linux/install.sh` | `packaging/macos/install.sh`: `View Markdown.app` built locally with py2app into `~/Applications`; `cmark-gfm` from Homebrew |
 
 ### 10.2 Parity rule
 
@@ -451,7 +451,7 @@ front ends provide it, or when the table below records the gap.
 | Feature | Linux | macOS |
 |---|---|---|
 | MVP 1: display, live reload, safety | Done | Done |
-| MVP 1: installation, Finder / "Open With" | Done | Planned (needs the app bundle) |
+| MVP 1: installation, Finder / "Open With" | Done | Done (`packaging/macos/install.sh`; verify opening from Finder) |
 | MVP 2: syntax highlighting | Done | Done |
 | MVP 3: font, theme, zoom | Done | Done |
 | MVP 4: git history sidebar | Done | Done |
