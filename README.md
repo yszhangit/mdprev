@@ -107,8 +107,8 @@ venv/bin/python -m mdprev path/to/document.md
 ```
 
 It behaves as described above, with macOS conventions: zoom with `Cmd`+`=`,
-`Cmd`+`-`, and `Cmd`+`0`; font and theme under the **View** menu; the git
-outline with the toolbar button or `Ctrl`+`Cmd`+`S`; the git history with its
+`Cmd`+`-`, and `Cmd`+`0`; font and theme under the **View** menu; the
+outline with its toolbar button or `Ctrl`+`Cmd`+`S`; the git history with its
 toolbar button or `Ctrl`+`Cmd`+`H`; and `Escape` (or
 **View > Back to Working Copy**) to clear a pin or return to the working copy.
 Preferences are stored in `~/Library/Application Support/MdPrev`.

@@ -13,6 +13,7 @@ from AppKit import (
     NSSplitViewController,
     NSSplitViewItem,
     NSToolbar,
+    NSToolbarDisplayModeIconOnly,
     NSToolbarFlexibleSpaceItemIdentifier,
     NSToolbarItem,
     NSViewController,
@@ -129,7 +130,7 @@ class PreviewWindow:
         self.window.setContentViewController_(self._split)
         toolbar = NSToolbar.alloc().initWithIdentifier_("io.github.yszhangit.mdprev")
         toolbar.setDelegate_(self._bridge)
-        toolbar.setDisplayMode_(1)  # NSToolbarDisplayModeIconOnly
+        toolbar.setDisplayMode_(NSToolbarDisplayModeIconOnly)
         self.window.setToolbar_(toolbar)
         self.window.setToolbarStyle_(NSWindowToolbarStyleUnified)
         # Setting a content view controller resizes the window to the
@@ -145,11 +146,10 @@ class PreviewWindow:
         self._split.view().layoutSubtreeIfNeeded()
         split_view.setPosition_ofDividerAtIndex_(prefs.get("outline_width", 240), 0)
         if self._sidebar_item is not None:
+            # Panes abut: the dividers of a split view controller take no
+            # width of their own, so the history pane starts at its divider.
             split_view.setPosition_ofDividerAtIndex_(
-                split_view.frame().size.width
-                - prefs.get("sidebar_width", 280)
-                - split_view.dividerThickness(),
-                1,
+                split_view.frame().size.width - prefs.get("sidebar_width", 280), 1
             )
         self._outline_item.setCollapsed_(not prefs.get("outline_visible", False))
         if self._sidebar_item is not None:
@@ -394,10 +394,14 @@ class PreviewWindow:
             "window_width": int(size.width),
             "window_height": int(size.height),
         }
+        # Measure the panes, not their content views: macOS insets a sidebar's
+        # content inside its pane, so saving the content width would shrink
+        # the pane a little on every launch.
+        panes = self._split.splitView().arrangedSubviews()
         if self.sidebar_visible:
-            prefs["sidebar_width"] = int(self.sidebar.view.frame().size.width)
+            prefs["sidebar_width"] = int(panes[len(panes) - 1].frame().size.width)
         if self.outline_visible:
-            prefs["outline_width"] = int(self.outline.view.frame().size.width)
+            prefs["outline_width"] = int(panes[0].frame().size.width)
         save_preferences(**prefs)
         shutil.rmtree(self._scratch, ignore_errors=True)
         self._webview.setNavigationDelegate_(None)

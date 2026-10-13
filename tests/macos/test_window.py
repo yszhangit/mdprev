@@ -300,3 +300,20 @@ def test_outline_and_history_visibility_are_remembered(open_window, tmp_path):
         return view.convertRect_toView_(view.bounds(), None).origin.x
 
     assert left_edge(window.outline.view) < left_edge(window._webview) < left_edge(window.sidebar.view)
+
+
+def test_pane_widths_survive_reopening(open_window, tmp_path):
+    from mdprev.core.preferences import load_preferences
+
+    save_preferences(
+        outline_visible=True, sidebar_visible=True, outline_width=300, sidebar_width=320
+    )
+    doc = _repo(tmp_path, ["# First\n"])
+
+    for _ in range(3):
+        window = open_window(doc)
+        window.window.close()
+        spin(0.1)
+
+    prefs = load_preferences()
+    assert (prefs["outline_width"], prefs["sidebar_width"]) == (300, 320)
