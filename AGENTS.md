@@ -6,6 +6,54 @@ View Markdown is a small, read-only Markdown preview application for Ubuntu
 26.04 LTS GNOME and macOS 26 on Apple silicon. Keep the application focused,
 native-looking on each platform, and easy to install.
 
+## Two repositories
+
+All development happens in this repository. It is private and keeps the full
+history, the plans and specs in `docs/`, and this file; its directory and
+remote still carry the application's former name.
+
+The application is published from a second, public repository,
+`fixed-42/view-markdown`, checked out beside this one at `../view-markdown`.
+That repository is a generated copy, never a place to work:
+
+- Never edit `../view-markdown` by hand. Change this repository, commit, and
+  run `packaging/export-public.sh [REF]`, which copies the committed files of
+  `REF` (default `HEAD`) into it.
+- `.gitattributes` lists what is not published (`export-ignore`): `docs/`,
+  `AGENTS.md`, `FEATURE_REQUIREMENTS.md`, the export script, and
+  `.gitattributes` itself. Development documents stay private; add any new
+  one there.
+- Everything else is public: code, comments, tests, fixtures, packaging, and
+  `README.md`, the only published document. Do not refer to the private
+  documents or to internal milestones ("MVP 2") in them. Never put a maintainer's name,
+  handle, e-mail address, machine or home-directory path, or any mention of
+  this private repository in them. The export script refuses to copy a tree
+  that contains the committer's git name, e-mail, login, home path, or this
+  directory's name. That check is a backstop, not a substitute for care.
+- `README.md` is written for users. Notes about process, tooling, or the
+  maintainer's environment belong here or in `docs/`.
+- The application ID and every URL name the public organization:
+  `io.github.fixed-42.view-markdown`,
+  `https://github.com/fixed-42/view-markdown`.
+- Do not commit, tag, or push in `../view-markdown` unless the maintainer asks.
+  It commits under its own repository-local git identity, never the one used
+  here; check `git -C ../view-markdown var GIT_AUTHOR_IDENT` first.
+- The public history is one commit per release ("Release vX.Y.Z"), tagged
+  with the same version as the commit exported from here. The version lives
+  in `view_markdown/__init__.py`.
+- Issues and pull requests arrive on the public repository. Apply an accepted
+  change here, credit its author in the commit message, and export; do not
+  merge it there.
+
+To publish a release:
+
+1. Finish the verification in "Tests and verification" on both platforms.
+2. Update the version, commit, and tag `vX.Y.Z` here.
+3. Run `packaging/export-public.sh vX.Y.Z`.
+4. Run the tests in `../view-markdown` and review `git status` and the diff
+   there.
+5. The maintainer commits, tags, and pushes the public repository.
+
 ## Code layout
 
 - `view_markdown/core/`: all toolkit-neutral behavior: rendering, sanitizing,

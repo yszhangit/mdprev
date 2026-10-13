@@ -1,4 +1,4 @@
-# MVP 2 syntax highlighting
+# Syntax highlighting
 
 ```bash
 printf '%s\n' "hello"
